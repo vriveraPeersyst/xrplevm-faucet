@@ -19,24 +19,21 @@ export function ConnectWalletButton({
   const [connectedAccount, setConnectedAccount] = useState<string | null>(null);
   const [showMenu, setShowMenu] = useState(false);
   const [isReturningUser, setIsReturningUser] = useState(true);
+  const [mounted, setMounted] = useState(false); // <-- fix here
 
-  // Check MetaMask presence
-  const hasMetaMask =
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    typeof window !== "undefined" && (window as any).ethereum;
-
-  // Load returning user status on mount
   useEffect(() => {
+    setMounted(true); // mark as mounted on client
+
     const stored = localStorage.getItem("isReturningUser");
     if (stored === null) setIsReturningUser(false);
     else setIsReturningUser(stored === "true");
 
-    if (!hasMetaMask) return;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    if (typeof window === "undefined" || !(window as any).ethereum) return;
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const ethereum = (window as any).ethereum;
 
-    // Check if already connected
     ethereum.request({ method: "eth_accounts" }).then((accounts: string[]) => {
       if (accounts && accounts.length > 0) {
         setConnectedAccount(accounts[0]);
@@ -44,7 +41,6 @@ export function ConnectWalletButton({
       }
     });
 
-    // Listen to account changes (disconnect handling)
     const handleAccountsChanged = (accounts: string[]) => {
       if (accounts.length === 0) {
         setConnectedAccount(null);
@@ -58,21 +54,21 @@ export function ConnectWalletButton({
 
     ethereum.on("accountsChanged", handleAccountsChanged);
     return () => ethereum.removeListener("accountsChanged", handleAccountsChanged);
-  }, [hasMetaMask, onConnected, onDisconnected]);
+  }, [onConnected, onDisconnected]);
 
   // ✅ Connect flow
   async function connectWallet() {
-    if (!hasMetaMask) return;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    if (typeof window === "undefined" || !(window as any).ethereum) return;
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const ethereum = (window as any).ethereum;
 
     try {
-      // Request connection (accounts access)
       const accounts: string[] = await ethereum.request({
         method: "eth_requestAccounts",
       });
 
-      // Prompt for permissions if it's a new user or after disconnect
       if (!isReturningUser) {
         await ethereum.request({
           method: "wallet_requestPermissions",
@@ -80,7 +76,6 @@ export function ConnectWalletButton({
         });
       }
 
-      // Handle connection
       if (accounts.length > 0) {
         setConnectedAccount(accounts[0]);
         onConnected?.(accounts[0]);
@@ -99,26 +94,29 @@ export function ConnectWalletButton({
     onDisconnected?.();
     onConnected?.("");
 
-    // Mark as non-returning to force permissions next time
     setIsReturningUser(false);
     localStorage.setItem("isReturningUser", "false");
 
-    // Revoke permissions (user will have to confirm)
+    // Ensure window.ethereum is available before using it
     if (typeof window !== "undefined" && window.ethereum) {
         try {
-          await window.ethereum.request({
+        await window.ethereum.request({
             method: "wallet_revokePermissions",
             params: [{ eth_accounts: {} }],
-          });
+        });
         } catch (error) {
-          console.error("Error revoking permissions:", error);
+        console.error("Error revoking permissions:", error);
         }
-      } else {
+    } else {
         console.warn("Ethereum provider is not available.");
-      }
+    }
   }
 
-  // Render based on state
+  // ⛔️ Avoid rendering until mounted to prevent hydration mismatch
+  if (!mounted) return null;
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const hasMetaMask = typeof window !== "undefined" && (window as any).ethereum;
 
   // 🚫 No MetaMask
   if (!hasMetaMask) {
@@ -135,7 +133,7 @@ export function ConnectWalletButton({
     );
   }
 
-  // ✅ Connected state
+  // ✅ Connected
   if (connectedAccount) {
     const shortAddr = `${connectedAccount.slice(0, 6)}...${connectedAccount.slice(-4)}`;
     return (
