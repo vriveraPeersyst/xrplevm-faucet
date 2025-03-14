@@ -13,7 +13,6 @@ import { ConnectWalletButton } from "./connect-wallet-button";
 type NetworkType = "Devnet" | "Testnet";
 
 export function Header({
-  network,
   onAddressConnected,
 }: {
   network: NetworkType;
@@ -47,7 +46,6 @@ export function Header({
       <div className="hidden z-50 md:flex md:items-center md:gap-4">
         {/* The new ConnectWalletButton for connecting the user's account */}
         <ConnectWalletButton
-          network={network}
           onConnected={(addr) => onAddressConnected?.(addr)}
         />
 

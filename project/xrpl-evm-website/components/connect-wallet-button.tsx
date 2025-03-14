@@ -5,19 +5,12 @@ import { Button } from "./ui/button";
 import { Icons } from "./icons";
 import { cn } from "@/lib/utils";
 
-type NetworkType = "Devnet" | "Testnet";
-
 interface ConnectWalletButtonProps {
   className?: string;
   onConnected?: (address: string) => void;
   onDisconnected?: () => void;
-  network?: NetworkType; // optional, if you want to pass the network in
 }
 
-/**
- * A small button that connects to MetaMask and displays
- * the connected address. Clicking it when connected shows a small menu to disconnect.
- */
 export function ConnectWalletButton({
   className,
   onConnected,
@@ -25,16 +18,25 @@ export function ConnectWalletButton({
 }: ConnectWalletButtonProps) {
   const [connectedAccount, setConnectedAccount] = useState<string | null>(null);
   const [showMenu, setShowMenu] = useState(false);
+  const [isReturningUser, setIsReturningUser] = useState(true);
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const hasMetaMask = typeof window !== "undefined" && (window as any).ethereum;
+  // Check MetaMask presence
+  const hasMetaMask =
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    typeof window !== "undefined" && (window as any).ethereum;
 
+  // Load returning user status on mount
   useEffect(() => {
+    const stored = localStorage.getItem("isReturningUser");
+    if (stored === null) setIsReturningUser(false);
+    else setIsReturningUser(stored === "true");
+
     if (!hasMetaMask) return;
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const ethereum = (window as any).ethereum;
 
-    // Check if user is already connected
+    // Check if already connected
     ethereum.request({ method: "eth_accounts" }).then((accounts: string[]) => {
       if (accounts && accounts.length > 0) {
         setConnectedAccount(accounts[0]);
@@ -42,11 +44,12 @@ export function ConnectWalletButton({
       }
     });
 
-    // Listen for account changes
+    // Listen to account changes (disconnect handling)
     const handleAccountsChanged = (accounts: string[]) => {
       if (accounts.length === 0) {
         setConnectedAccount(null);
-        onConnected?.("");
+        onDisconnected?.();
+        localStorage.setItem("isReturningUser", "false");
       } else {
         setConnectedAccount(accounts[0]);
         onConnected?.(accounts[0]);
@@ -54,35 +57,70 @@ export function ConnectWalletButton({
     };
 
     ethereum.on("accountsChanged", handleAccountsChanged);
+    return () => ethereum.removeListener("accountsChanged", handleAccountsChanged);
+  }, [hasMetaMask, onConnected, onDisconnected]);
 
-    return () => {
-      ethereum.removeListener("accountsChanged", handleAccountsChanged);
-    };
-  }, [hasMetaMask, onConnected]);
-
+  // ✅ Connect flow
   async function connectWallet() {
     if (!hasMetaMask) return;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const ethereum = (window as any).ethereum;
+
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const ethereum = (window as any).ethereum;
-      const accounts: string[] = await ethereum.request({ method: "eth_requestAccounts" });
-      if (accounts && accounts.length > 0) {
+      // Request connection (accounts access)
+      const accounts: string[] = await ethereum.request({
+        method: "eth_requestAccounts",
+      });
+
+      // Prompt for permissions if it's a new user or after disconnect
+      if (!isReturningUser) {
+        await ethereum.request({
+          method: "wallet_requestPermissions",
+          params: [{ eth_accounts: {} }],
+        });
+      }
+
+      // Handle connection
+      if (accounts.length > 0) {
         setConnectedAccount(accounts[0]);
         onConnected?.(accounts[0]);
+        setIsReturningUser(true);
+        localStorage.setItem("isReturningUser", "true");
       }
     } catch (err) {
       console.error("Failed to connect wallet:", err);
     }
   }
 
-  function handleDisconnect() {
-    setConnectedAccount(null);
-    onConnected?.("");
-    onDisconnected?.();
+  // ✅ Disconnect flow (simulated + permissions revoke)
+  async function handleDisconnect() {
     setShowMenu(false);
+    setConnectedAccount(null);
+    onDisconnected?.();
+    onConnected?.("");
+
+    // Mark as non-returning to force permissions next time
+    setIsReturningUser(false);
+    localStorage.setItem("isReturningUser", "false");
+
+    // Revoke permissions (user will have to confirm)
+    if (typeof window !== "undefined" && window.ethereum) {
+        try {
+          await window.ethereum.request({
+            method: "wallet_revokePermissions",
+            params: [{ eth_accounts: {} }],
+          });
+        } catch (error) {
+          console.error("Error revoking permissions:", error);
+        }
+      } else {
+        console.warn("Ethereum provider is not available.");
+      }
   }
 
-  // If no MetaMask installed
+  // Render based on state
+
+  // 🚫 No MetaMask
   if (!hasMetaMask) {
     return (
       <Button
@@ -97,12 +135,11 @@ export function ConnectWalletButton({
     );
   }
 
-  // If already connected, show short address + green dot
+  // ✅ Connected state
   if (connectedAccount) {
     const shortAddr = `${connectedAccount.slice(0, 6)}...${connectedAccount.slice(-4)}`;
-
     return (
-      <div className="relative">
+      <div className="relative inline-block">
         <Button
           variant="outline"
           size="lg"
@@ -113,7 +150,6 @@ export function ConnectWalletButton({
           <span className="font-semibold">{shortAddr}</span>
         </Button>
 
-        {/* Simple dropdown menu for "Disconnect" */}
         {showMenu && (
           <div className="absolute top-full right-0 mt-2 w-[140px] bg-[#1E1E1E] border border-white/10 rounded-md shadow-lg p-2 z-50">
             <button
@@ -128,7 +164,7 @@ export function ConnectWalletButton({
     );
   }
 
-  // If not connected yet
+  // 🟢 Not connected
   return (
     <Button
       onClick={connectWallet}
