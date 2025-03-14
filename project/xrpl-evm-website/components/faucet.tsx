@@ -49,6 +49,8 @@ export function Faucet({
   const [socket, setSocket] = useState<Socket | null>(null);
   const [activeTx, setActiveTx] = useState<TxStatus | null>(null);
 
+  const [showMissingRequirementsModal, setShowMissingRequirementsModal] = useState(false);
+
   // Connect to Socket.IO once on mount
   useEffect(() => {
     const newSocket = io("http://localhost:3003"); // or your server's URL
@@ -85,7 +87,7 @@ export function Faucet({
   // Handle faucet request
   const handleRequestXRP = async () => {
     if (!followedTwitter || !joinedDiscord) {
-      alert("Please follow on X and join Discord first.");
+      setShowMissingRequirementsModal(true);
       return;
     }
 
@@ -173,6 +175,30 @@ export function Faucet({
       </div>
     );
   }
+
+
+  function MissingRequirementsModal() {
+    if (!showMissingRequirementsModal) return null;
+
+    return (
+      <div className="fixed inset-0 flex items-center justify-center z-50 bg-black/50">
+        <div className="bg-white rounded-md p-6 w-[500px] text-black">
+          <h2 className="text-xl font-bold mb-4">Almost there!</h2>
+          <p className="mb-4">
+            Please make sure you follow us on 𝕏 and join our Discord 👾 before
+            requesting test XRP.
+          </p>
+          <button
+            className="bg-purple-600 text-white px-4 py-2 rounded-md"
+            onClick={() => setShowMissingRequirementsModal(false)}
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    );
+  }
+
 
   return (
     <>
@@ -262,6 +288,8 @@ export function Faucet({
 
       {/* Render the Transaction Status Modal if we have an active transaction */}
       <TransactionStatusModal />
+
+      <MissingRequirementsModal />
     </>
   );
 }
