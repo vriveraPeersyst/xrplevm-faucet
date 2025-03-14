@@ -144,7 +144,7 @@ app.post('/api/faucet', async (req: Request, res: Response): Promise<void> => {
 
     // Start polling the XRPL-EVM (destination) transaction status.
     // Note: Pass all five arguments: destinationAddress, fraction, sourceTxHash, startedAt, and io.
-    void pollDestinationTxStatus(evmAddress, amountId, txHash, startedAt, io);
+    void pollDestinationTxStatus(evmAddress, amountId, txHash, startedAt, io, network);
 
     // Record the transaction in the database.
     const now = Date.now();

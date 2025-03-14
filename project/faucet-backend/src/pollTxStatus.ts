@@ -101,7 +101,8 @@ export async function pollDestinationTxStatus(
   expectedTotal: number,
   sourceTxHash: string,
   startedAt: number,
-  io: SocketServer
+  io: SocketServer,
+  network: "Devnet" | "Testnet" // <-- Add this
 ): Promise<void> {
   let attempts = 0;
 
@@ -109,8 +110,16 @@ export async function pollDestinationTxStatus(
     attempts++;
     try {
       // Construct the explorer API URL.
+      let explorerBaseUrl: string;
+
+      if (network === "Devnet") {
+        explorerBaseUrl = "https://explorer.devnet.xrplevm.org/api/v2/addresses";
+      } else {
+        explorerBaseUrl = "https://explorer.testnet.xrplevm.org/api/v2/addresses";
+      }
+
       const url =
-        `https://explorer.testnet.xrplevm.org/api/v2/addresses/${destinationAddress}/token-transfers` +
+        `${explorerBaseUrl}/${destinationAddress}/token-transfers` +
         `?type=ERC-20` +
         `&filter=${destinationAddress}%20|%200x0000000000000000000000000000000000000000` +
         `&token=0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE`;
