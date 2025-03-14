@@ -30,15 +30,19 @@ interface TransactionUpdatedEvent {
   destinationTxHash?: string;
 }
 
+interface FaucetProps {
+  network: NetworkType;
+  setNetwork: React.Dispatch<React.SetStateAction<NetworkType>>;
+  evmAddressFromHeader?: string; // <--- NEW optional prop
+}
+
 export function Faucet({
   network,
   setNetwork,
-}: {
-  network: NetworkType;
-  setNetwork: React.Dispatch<React.SetStateAction<NetworkType>>;
-}) {
+  evmAddressFromHeader,
+}: FaucetProps) {
   // Local states for user actions
-  const [evmAddress, setEvmAddress] = useState("");
+  const [evmAddress, setEvmAddress] = useState(evmAddressFromHeader || "");
   const [followedTwitter, setFollowedTwitter] = useState(false);
   const [joinedDiscord, setJoinedDiscord] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -50,6 +54,17 @@ export function Faucet({
   const [activeTx, setActiveTx] = useState<TxStatus | null>(null);
 
   const [showMissingRequirementsModal, setShowMissingRequirementsModal] = useState(false);
+
+    // Whenever evmAddressFromHeader changes, update our local evmAddress
+    useEffect(() => {
+      if (evmAddressFromHeader) {
+        setEvmAddress(evmAddressFromHeader);
+      } else {
+        // If disconnected or no address from the header, let them type
+        setEvmAddress("");
+      }
+    }, [evmAddressFromHeader]);
+  
 
   // Connect to Socket.IO once on mount
   useEffect(() => {
@@ -301,7 +316,8 @@ export function Faucet({
             value={evmAddress}
             onChange={(e) => setEvmAddress(e.target.value)}
             placeholder="0x123..."
-            className="border border-white/20 rounded-md px-3 py-2 w-[280px] bg-background text-foreground"
+            className="border border-white/20 rounded-md px-3 py-2 w-[459px] bg-background text-foreground"
+            disabled={!!evmAddressFromHeader}
           />
         </div>
 

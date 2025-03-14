@@ -1,19 +1,23 @@
 "use client";
 
-import { buttonVariants } from "./ui/button";
-import { cn } from "@/lib/utils";
 import React from "react";
-
+import { cn } from "@/lib/utils";
 import { Logo } from "./logo";
 import { HeaderNavigationMenu } from "./header-navigation-menu";
 import { ExternalLinkWithArrow } from "./external-link";
-import { MetamaskHeaderButton } from "./metamask-button";
+import { buttonVariants } from "./ui/button";
+import { ConnectWalletButton } from "./connect-wallet-button";
+// If you still want to keep MetamaskHeaderButton for "Add Network", you can import it below.
+// import { MetamaskHeaderButton } from "./metamask-button";
+
+type NetworkType = "Devnet" | "Testnet";
 
 export function Header({
   network,
+  onAddressConnected,
 }: {
-  // Accept network as a prop
-  network: "Devnet" | "Testnet";
+  network: NetworkType;
+  onAddressConnected?: (address: string) => void;
 }) {
   const [isMenuOpen, setIsMenuOpen] = React.useState(false);
 
@@ -40,9 +44,16 @@ export function Header({
         <HeaderNavigationMenu onOpenChange={setIsMenuOpen} />
       </div>
 
-      <div className="hidden z-50 md:flex md:items-center md:gap-2">
-        {/* Use the same network the parent passed in */}
-        <MetamaskHeaderButton network={network} />
+      <div className="hidden z-50 md:flex md:items-center md:gap-4">
+        {/* The new ConnectWalletButton for connecting the user's account */}
+        <ConnectWalletButton
+          network={network}
+          onConnected={(addr) => onAddressConnected?.(addr)}
+        />
+
+        {/* If you still want to keep "Add XRPL EVM" button in the header, you can re-add it:
+           <MetamaskHeaderButton network={network} />
+        */}
 
         <ExternalLinkWithArrow
           className={buttonVariants({ variant: "default", size: "lg" })}
