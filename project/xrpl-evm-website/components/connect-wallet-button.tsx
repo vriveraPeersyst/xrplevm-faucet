@@ -18,7 +18,7 @@ export function ConnectWalletButton({
 }: ConnectWalletButtonProps) {
   const [connectedAccount, setConnectedAccount] = useState<string | null>(null);
   const [showMenu, setShowMenu] = useState(false);
-  const [isReturningUser, setIsReturningUser] = useState(true);
+  const [, setIsReturningUser] = useState(true);
   const [mounted, setMounted] = useState(false); // <-- fix here
 
   useEffect(() => {
@@ -60,22 +60,17 @@ export function ConnectWalletButton({
   async function connectWallet() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     if (typeof window === "undefined" || !(window as any).ethereum) return;
-
+  
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const ethereum = (window as any).ethereum;
-
+  
     try {
+      // ✅ Only use this for connecting and permissions
       const accounts: string[] = await ethereum.request({
         method: "eth_requestAccounts",
       });
-
-      if (!isReturningUser) {
-        await ethereum.request({
-          method: "wallet_requestPermissions",
-          params: [{ eth_accounts: {} }],
-        });
-      }
-
+  
+      // If connected, handle connection
       if (accounts.length > 0) {
         setConnectedAccount(accounts[0]);
         onConnected?.(accounts[0]);
