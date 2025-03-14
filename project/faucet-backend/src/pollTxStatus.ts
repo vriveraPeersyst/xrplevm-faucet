@@ -113,7 +113,7 @@ export async function pollDestinationTxStatus(
       let explorerBaseUrl: string;
 
       if (network === "Devnet") {
-        explorerBaseUrl = "https://explorer.devnet.xrplevm.org/api/v2/addresses";
+        explorerBaseUrl = "https://explorer.xrplevm.org/api/v2/addresses";
       } else {
         explorerBaseUrl = "https://explorer.testnet.xrplevm.org/api/v2/addresses";
       }
