@@ -11,7 +11,10 @@ declare global {
   }
 }
 
-// Quick config references:
+// ✅ Redirect URL for MetaMask install
+const INSTALL_METAMASK_URL = "https://docs.xrplevm.org/pages/users/getting-started/install-metamask";
+
+// ✅ Quick config references:
 const DEVNET_CONFIG = {
   chainId: "0x" + Number(1440002).toString(16),
   chainName: "XRPL EVM Sidechain Devnet",
@@ -39,10 +42,14 @@ const TESTNET_CONFIG = {
 type NetworkType = "Devnet" | "Testnet";
 
 /** 
- * Common logic for requesting a network add/switch in MetaMask
+ * ✅ Common logic for requesting a network add/switch in MetaMask
+ * If MetaMask not installed, redirects to installation page.
  */
 async function addNetworkToMetamask(network: NetworkType) {
-  if (!window.ethereum) return;
+  if (!window.ethereum) {
+    window.open(INSTALL_METAMASK_URL, "_blank");
+    return;
+  }
 
   const selectedConfig = network === "Devnet" ? DEVNET_CONFIG : TESTNET_CONFIG;
 
@@ -51,12 +58,13 @@ async function addNetworkToMetamask(network: NetworkType) {
       method: "wallet_addEthereumChain",
       params: [selectedConfig],
     });
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  } catch (_) {}
+  } catch (error) {
+    console.error("Failed to add network:", error);
+  }
 }
 
 /**
- * Regular full-labeled button
+ * ✅ Regular full-labeled button
  */
 export function MetamaskButton({
   className,
@@ -83,7 +91,7 @@ export function MetamaskButton({
 }
 
 /**
- * Smaller icon-only button used in header, etc.
+ * ✅ Smaller icon-only button used in header, etc.
  */
 export function MetamaskHeaderButton({
   className,

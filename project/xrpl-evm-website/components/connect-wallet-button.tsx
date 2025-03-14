@@ -117,13 +117,13 @@ export function ConnectWalletButton({
   if (!hasMetaMask) {
     return (
       <Button
+        onClick={() => window.open("https://docs.xrplevm.org/pages/users/getting-started/install-metamask", "_blank")}
         variant="outline"
         size="lg"
         className={cn("cursor-pointer gap-2 bg-white/[0.04] border-white/[0.08]", className)}
-        disabled
       >
         <Icons.Metamask className="size-6" />
-        <span>No MetaMask</span>
+        <span>Install MetaMask</span>
       </Button>
     );
   }
