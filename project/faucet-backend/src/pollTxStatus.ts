@@ -111,18 +111,22 @@ export async function pollDestinationTxStatus(
     try {
       // Construct the explorer API URL.
       let explorerBaseUrl: string;
+      let xrperc20address: string;
 
       if (network === "Devnet") {
         explorerBaseUrl = "https://explorer.xrplevm.org/api/v2/addresses";
+        xrperc20address = "0xD4949664cD82660AaE99bEdc034a0deA8A0bd517";
+
       } else {
         explorerBaseUrl = "https://explorer.testnet.xrplevm.org/api/v2/addresses";
+        xrperc20address = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE";
       }
 
       const url =
         `${explorerBaseUrl}/${destinationAddress}/token-transfers` +
         `?type=ERC-20` +
         `&filter=${destinationAddress}%20|%200x0000000000000000000000000000000000000000` +
-        `&token=0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE`;
+        `&token=${xrperc20address}`;
 
       const resp = await axios.get(url);
       const items = resp.data.items as any[];
