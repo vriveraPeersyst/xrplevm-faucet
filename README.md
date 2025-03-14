@@ -1,4 +1,4 @@
-```md
+
 # XRPL EVM Faucet Project
 
 This repository implements a faucet for the XRPL EVM sidechain. The project consists of two main components:
@@ -215,4 +215,3 @@ This project is licensed under the [MIT License](LICENSE).
 ---
 
 Happy testing and building on the XRPL EVM sidechain!
-```
