@@ -15,7 +15,7 @@ export default function Home() {
     <main className="flex flex-col gap-[72px] w-full">
       <Header network={network} />
       {/* This container allows stacking the Hero and Faucet */}
-      <div className="relative -mt-[550px]">
+      <div className="relative -mt-[589px]">
         {/* Hero is in the background */}
         <Hero />
         {/* Faucet is absolutely positioned on top of Hero */}
@@ -23,7 +23,7 @@ export default function Home() {
         <Faucet network={network} setNetwork={setNetwork} />
         </div>
       </div>
-      <Footer />
+      <Footer network={network}/>
     </main>
   );
 }

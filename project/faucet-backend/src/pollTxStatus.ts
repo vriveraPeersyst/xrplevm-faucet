@@ -18,6 +18,7 @@ function getTransactionResult(meta: any): string | null {
 
 /**
  * Poll the source chain (XRPL) for transaction status.
+ * - On success, store sourceTxTime in DB using close_time_iso.
  */
 export async function pollSourceTxStatus(
   xrplUrl: string,
@@ -40,17 +41,27 @@ export async function pollSourceTxStatus(
       const transactionResult = getTransactionResult(response.result.meta);
 
       if (transactionResult === "tesSUCCESS") {
+        // Extract the official XRPL close time (ISO string)
+        const closeTimeIso = response.result.close_time_iso as string;
+        const sourceTxMs = new Date(closeTimeIso).getTime();
+
+        // Broadcast that the source TX is settled
         io.emit("transactionUpdated", {
           id: txHash,
           sourceStatus: "Settled",
-          sourceTxTime: Date.now(),
+          // You could also pass the ISO string if the UI wants to show it
+          sourceTxTime: closeTimeIso,
         });
 
-        // Update DB with new status
+        // Update DB with new status + store the sourceTxTime in ms
         const db = getDb();
         await db.run(
-          `UPDATE transactions SET status = ? WHERE xrplTxHash = ?`,
+          `UPDATE transactions 
+             SET status = ?, 
+                 xrplTxTime = ?
+           WHERE xrplTxHash = ?`,
           "XRPL Settled",
+          sourceTxMs,   // store as a number
           txHash
         );
 
@@ -82,11 +93,12 @@ export async function pollSourceTxStatus(
 
 /**
  * Poll the destination chain (EVM sidechain) for transaction status.
- * Compare the inbound deposit to the entire bridging amount (e.g. 90.0002), not just the fraction.
+ * - On success, extract `timestamp` from the inbound transaction item.
+ * - Then fetch `xrplTxTime` from DB, compute bridgingTime = EVMtime - XRPLtime in **seconds**.
  */
 export async function pollDestinationTxStatus(
   destinationAddress: string,
-  expectedTotal: number, // e.g. 90.0002 (Base + fraction)
+  expectedTotal: number,
   sourceTxHash: string,
   startedAt: number,
   io: SocketServer
@@ -103,18 +115,21 @@ export async function pollDestinationTxStatus(
         `&filter=${destinationAddress}%20|%200x0000000000000000000000000000000000000000` +
         `&token=0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE`;
 
-      // Debug: Log the request URL
-      console.log(`[pollDestinationTxStatus] GET => ${url}`);
-
       const resp = await axios.get(url);
-
-      // Debug: Log the status and the entire response data
-      console.log(
-        `[pollDestinationTxStatus] Explorer responded with status ${resp.status}:`,
-        JSON.stringify(resp.data, null, 2)
-      );
-
       const items = resp.data.items as any[];
+
+      // We need the sourceTxTime from DB to compute bridging time
+      const db = getDb();
+      // Retrieve the row from DB to get the XRPL settle time
+      const row = await db.get<{
+        xrplTxTime: number | null;
+      }>(
+        `SELECT xrplTxTime 
+           FROM transactions
+          WHERE xrplTxHash = ?`,
+        sourceTxHash
+      );
+      const sourceTxMs = row?.xrplTxTime || 0;
 
       for (const item of items) {
         // Ensure the inbound transfer's "to" address matches (case-insensitive)
@@ -125,30 +140,45 @@ export async function pollDestinationTxStatus(
         const decimals = parseInt(item.total.decimals, 10);
         const floatVal = parseFloat(rawValueStr) / 10 ** decimals;
 
-        // Compare to the entire bridging amount (using a small threshold).
+        // If you are bridging e.g. 0.0002, make sure expectedTotal is also 0.0002, not 90.0002
         if (Math.abs(floatVal - expectedTotal) < 1e-9) {
-          const bridgingTime = Date.now() - startedAt;
+          // We found the inbound deposit.
+          // Now parse the item.timestamp (like "2025-03-14T15:19:36.000000Z")
+          const evmTimeMs = new Date(item.timestamp).getTime();
+
+          // bridgingTime in ms
+          let bridgingTimeMs = 0;
+          if (sourceTxMs > 0) {
+            bridgingTimeMs = evmTimeMs - sourceTxMs;
+          }
+          // Convert to seconds
+          const bridgingTimeSec = Math.floor(bridgingTimeMs / 1000);
+
           console.log(
             `[pollDestinationTxStatus] Found inbound deposit for XRPL tx=${sourceTxHash}, EVM tx=${item.transaction_hash}`
           );
 
+          // Emit an event so the frontend sees "Arrived"
+          // and bridging time in seconds
           io.emit("transactionUpdated", {
             id: sourceTxHash,
             destinationTxStatus: "Arrived",
-            bridgingTimeMs: bridgingTime,
+            bridgingTimeMs: bridgingTimeSec,  // <--- now in seconds
             destinationTxHash: item.transaction_hash,
           });
 
-          // Update DB with final status
-          const db = getDb();
+          // Update DB with final status + store the EVM timestamp + bridgingTime
           await db.run(
             `UPDATE transactions
-             SET status = ?, bridgingTimeMs = ?, destinationTxHash = ?, xrplevmTxTime = ?
+               SET status = ?, 
+                   bridgingTimeMs = ?, 
+                   destinationTxHash = ?, 
+                   xrplevmTxTime = ?
              WHERE xrplTxHash = ?`,
             "Arrived",
-            bridgingTime,
+            bridgingTimeSec,   // store bridging time in seconds
             item.transaction_hash,
-            Date.now(),
+            evmTimeMs,
             sourceTxHash
           );
 
@@ -157,7 +187,6 @@ export async function pollDestinationTxStatus(
         }
       }
     } catch (err) {
-      // Debug: Log the entire error
       console.error("Error polling destination tx status:", err);
     }
 
