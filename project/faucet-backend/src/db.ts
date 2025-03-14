@@ -10,17 +10,20 @@ export async function initDb() {
     driver: sqlite3.Database
   });
 
-  // Create table if it doesn't exist
+  // Updated table schema
   await db.run(`
     CREATE TABLE IF NOT EXISTS transactions (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       evmAddress TEXT,
       fractionId REAL,
       xrplTxHash TEXT,
-      xrplevmTxHash TEXT,
+      xrplevmTxHash TEXT,   -- if you plan to store the bridging transaction from EVM side
       amountId REAL,
       xrplTxTime INTEGER,
-      xrplevmTxTime INTEGER
+      xrplevmTxTime INTEGER,
+      status TEXT,
+      bridgingTimeMs INTEGER,
+      destinationTxHash TEXT
     )
   `);
 }

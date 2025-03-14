@@ -1,16 +1,19 @@
 import { Client } from "xrpl";
 import { Server as SocketServer } from "socket.io";
 import axios from "axios";
+import { getDb } from "./db";
 
 const SOURCE_POLL_INTERVAL = 5000; // 5 seconds
 const DEST_POLL_INTERVAL = 5000;   // 5 seconds
-const MAX_POLL_ATTEMPTS = 20;
+const MAX_POLL_ATTEMPTS = 300;
 
 /**
  * Safely accesses TransactionResult property
  */
 function getTransactionResult(meta: any): string | null {
-  return meta && typeof meta === 'object' && 'TransactionResult' in meta ? meta.TransactionResult : null;
+  return meta && typeof meta === "object" && "TransactionResult" in meta
+    ? meta.TransactionResult
+    : null;
 }
 
 /**
@@ -42,9 +45,19 @@ export async function pollSourceTxStatus(
           sourceStatus: "Settled",
           sourceTxTime: Date.now(),
         });
+
+        // Update DB with new status
+        const db = getDb();
+        await db.run(
+          `UPDATE transactions SET status = ? WHERE xrplTxHash = ?`,
+          "XRPL Settled",
+          txHash
+        );
+
         clearInterval(intervalId);
         await xrplClient.disconnect();
       } else if (transactionResult !== null) {
+        // Means it was some other status (tec, tef, etc.)
         io.emit("transactionUpdated", {
           id: txHash,
           sourceStatus: "Failed",
@@ -55,6 +68,7 @@ export async function pollSourceTxStatus(
     } catch (err) {
       console.error("Error polling source tx status:", err);
     }
+
     if (attempts >= MAX_POLL_ATTEMPTS) {
       clearInterval(intervalId);
       io.emit("transactionUpdated", {
@@ -68,15 +82,17 @@ export async function pollSourceTxStatus(
 
 /**
  * Poll the destination chain (EVM sidechain) for transaction status.
+ * Compare the inbound deposit to the entire bridging amount (e.g. 90.0002), not just the fraction.
  */
 export async function pollDestinationTxStatus(
   destinationAddress: string,
-  fraction: number,
+  expectedTotal: number, // e.g. 90.0002 (Base + fraction)
   sourceTxHash: string,
   startedAt: number,
   io: SocketServer
 ): Promise<void> {
   let attempts = 0;
+
   const intervalId = setInterval(async () => {
     attempts++;
     try {
@@ -87,7 +103,17 @@ export async function pollDestinationTxStatus(
         `&filter=${destinationAddress}%20|%200x0000000000000000000000000000000000000000` +
         `&token=0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE`;
 
+      // Debug: Log the request URL
+      console.log(`[pollDestinationTxStatus] GET => ${url}`);
+
       const resp = await axios.get(url);
+
+      // Debug: Log the status and the entire response data
+      console.log(
+        `[pollDestinationTxStatus] Explorer responded with status ${resp.status}:`,
+        JSON.stringify(resp.data, null, 2)
+      );
+
       const items = resp.data.items as any[];
 
       for (const item of items) {
@@ -97,27 +123,44 @@ export async function pollDestinationTxStatus(
         }
         const rawValueStr = item.total.value;
         const decimals = parseInt(item.total.decimals, 10);
-        const floatVal = parseFloat(rawValueStr) / (10 ** decimals);
+        const floatVal = parseFloat(rawValueStr) / 10 ** decimals;
 
-        // Compare to bridging fraction (using a small threshold)
-        if (Math.abs(floatVal - fraction) < 1e-9) {
+        // Compare to the entire bridging amount (using a small threshold).
+        if (Math.abs(floatVal - expectedTotal) < 1e-9) {
           const bridgingTime = Date.now() - startedAt;
           console.log(
-            `[pollExplorerForInboundEvm] Found inbound deposit for XRPL tx=${sourceTxHash}, EVM tx=${item.transaction_hash}`
+            `[pollDestinationTxStatus] Found inbound deposit for XRPL tx=${sourceTxHash}, EVM tx=${item.transaction_hash}`
           );
+
           io.emit("transactionUpdated", {
             id: sourceTxHash,
             destinationTxStatus: "Arrived",
             bridgingTimeMs: bridgingTime,
             destinationTxHash: item.transaction_hash,
           });
+
+          // Update DB with final status
+          const db = getDb();
+          await db.run(
+            `UPDATE transactions
+             SET status = ?, bridgingTimeMs = ?, destinationTxHash = ?, xrplevmTxTime = ?
+             WHERE xrplTxHash = ?`,
+            "Arrived",
+            bridgingTime,
+            item.transaction_hash,
+            Date.now(),
+            sourceTxHash
+          );
+
           clearInterval(intervalId);
           return;
         }
       }
     } catch (err) {
+      // Debug: Log the entire error
       console.error("Error polling destination tx status:", err);
     }
+
     if (attempts >= MAX_POLL_ATTEMPTS) {
       clearInterval(intervalId);
       io.emit("transactionUpdated", {
