@@ -85,7 +85,7 @@ app.post('/api/faucet', async (req: Request, res: Response): Promise<void> => {
       memos = [
         {
           Memo: {
-            MemoData: Buffer.from(evmAddress.slice(2)).toString("hex").toUpperCase(),
+            MemoData: evmAddress.slice(2).toUpperCase(),
             MemoType: Buffer.from("destination_address").toString("hex").toUpperCase(),
           },
         },
@@ -107,7 +107,7 @@ app.post('/api/faucet', async (req: Request, res: Response): Promise<void> => {
       memos = [
         {
           Memo: {
-            MemoData: Buffer.from(evmAddress.slice(2)).toString("hex").toUpperCase(),
+            MemoData: evmAddress.slice(2).toUpperCase(),
             MemoType: Buffer.from("destination_address").toString("hex").toUpperCase(),
           },
         },

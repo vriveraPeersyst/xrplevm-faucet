@@ -1,11 +1,13 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "module": "ESNext",
+    "module": "CommonJS",         // <-- Switch to "CommonJS"
     "moduleResolution": "node",
     "lib": ["ES2022"],
     "strict": true,
     "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true, // helps with default imports
+    "skipLibCheck": true,                // optional, speeds up dev
     "outDir": "dist"
   },
   "include": ["src"]
