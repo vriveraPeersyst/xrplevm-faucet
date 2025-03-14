@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Button } from "./ui/button";
 import { Icons } from "./icons";
 import { cn } from "@/lib/utils";
+import { InstallMetamaskModal } from "./install-metamask-modal"; // Import modal
 
 interface ConnectWalletButtonProps {
   className?: string;
@@ -20,6 +21,38 @@ export function ConnectWalletButton({
   const [showMenu, setShowMenu] = useState(false);
   const [, setIsReturningUser] = useState(true);
   const [mounted, setMounted] = useState(false); // <-- fix here
+  const [hasMetaMask, setHasMetaMask] = useState<boolean>(false);
+  const [showInstallModal, setShowInstallModal] = useState<boolean>(false);
+
+  // 🚀 Detect MetaMask dynamically
+  useEffect(() => {
+    setMounted(true); // component is mounted on client
+
+    // Initial check
+    if (typeof window !== "undefined" && window.ethereum) {
+      setHasMetaMask(true);
+    }
+
+    // Listen to "ethereum#initialized" event fired when MetaMask gets injected
+    function handleEthereumInitialized() {
+        setHasMetaMask(true);
+        }
+    
+    window.addEventListener("ethereum#initialized", handleEthereumInitialized, { once: true });
+
+    // Polling every 2 seconds to check if MetaMask got installed
+    const interval = setInterval(() => {
+      if (typeof window !== "undefined" && window.ethereum) {
+        setHasMetaMask(true);
+        clearInterval(interval); // Stop polling once detected
+      }
+    }, 2000);
+
+    return () => {
+        window.removeEventListener("ethereum#initialized", handleEthereumInitialized);
+        clearInterval(interval); // clean up
+      };
+  }, []);
 
   useEffect(() => {
     setMounted(true); // mark as mounted on client
@@ -58,6 +91,10 @@ export function ConnectWalletButton({
 
   // ✅ Connect flow
   async function connectWallet() {
+    if (!window.ethereum) {
+        setShowInstallModal(true); // Open modal if MetaMask is not installed
+        return;
+    }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     if (typeof window === "undefined" || !(window as any).ethereum) return;
   
@@ -110,23 +147,25 @@ export function ConnectWalletButton({
   // ⛔️ Avoid rendering until mounted to prevent hydration mismatch
   if (!mounted) return null;
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const hasMetaMask = typeof window !== "undefined" && (window as any).ethereum;
-
-  // 🚫 No MetaMask
+  // ✅ Render Install Modal if needed
   if (!hasMetaMask) {
     return (
-      <Button
-        onClick={() => window.open("https://docs.xrplevm.org/pages/users/getting-started/install-metamask", "_blank")}
-        variant="outline"
-        size="lg"
-        className={cn("cursor-pointer gap-2 bg-white/[0.04] border-white/[0.08]", className)}
-      >
-        <Icons.Metamask className="size-6" />
-        <span>Install MetaMask</span>
-      </Button>
+      <>
+        <Button
+          variant="outline"
+          size="lg"
+          className={cn("cursor-pointer gap-2 bg-white/[0.04] border-white/[0.08]", className)}
+          onClick={() => setShowInstallModal(true)}
+        >
+          <Icons.Metamask className="size-6" />
+          <span className="font-semibold">Install MetaMask</span>
+        </Button>
+
+        <InstallMetamaskModal open={showInstallModal} onClose={() => setShowInstallModal(false)} />
+      </>
     );
   }
+
 
   // ✅ Connected
   if (connectedAccount) {
