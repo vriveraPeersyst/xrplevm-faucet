@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { io, Socket } from "socket.io-client";
 import { MetamaskButton } from "./metamask-button";
 import { Button } from "./ui/button";
+import { BridgingProgress } from "./bridging-progress";
 
 export type NetworkType = "Devnet" | "Testnet";
 
@@ -119,7 +120,7 @@ export function Faucet({
     }
 
     setLoading(true);
-    setWaitTime(15); // e.g., 15 seconds
+    setWaitTime(10); // e.g., 10 seconds
 
     try {
       const resp = await fetch("http://localhost:3003/api/faucet", {
@@ -212,10 +213,7 @@ export function Faucet({
 
             {/* Bridging spinner if bridging */}
             {isBridging && (
-              <div className="flex items-center gap-2 text-green-400 mb-2">
-                <div className="w-4 h-4 border-2 border-t-transparent border-green-400 rounded-full animate-spin" />
-                <p>Bridging in progress...</p>
-              </div>
+              <BridgingProgress />
             )}
 
             {/* Destination Tx Hash (if present) */}
