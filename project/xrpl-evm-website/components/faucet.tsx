@@ -69,14 +69,13 @@ export function Faucet({
       if (data.id === activeTx?.id) {
         setActiveTx((prev) => {
           if (!prev) return null;
-    
+
           let newStatus = prev.status;
-    
           // If we see a destinationTxHash + bridgingTime, mark it as "Arrived"
           if (data.destinationTxHash && data.bridgingTimeMs) {
             newStatus = "Arrived";
           }
-    
+
           return {
             ...prev,
             status: newStatus,
@@ -119,8 +118,6 @@ export function Faucet({
         throw new Error(data.error || "Faucet failed");
       }
 
-      // If you like, you can do a quick toast or alert here
-      // to say "Faucet TX started!"
       console.log("Faucet TX started. XRPL Hash:", data.txHash);
     } catch (error: unknown) {
       console.error(error);
@@ -135,91 +132,114 @@ export function Faucet({
     }
   };
 
-  // The Transaction Status Modal
+  // Enhanced Transaction Status Modal
   function TransactionStatusModal() {
-    // If there's no active transaction, hide the modal
     if (!activeTx) return null;
 
-    // A simple check to see if bridging is done or not
-    const isBridging = !activeTx.destinationTxHash && activeTx.status !== "Failed" && activeTx.status !== "Arrived" && activeTx.status !== "Timeout";
+    // Convert bridgingTime from ms to seconds
+    const bridgingTimeSec = activeTx.bridgingTimeMs
+      ? Math.floor(activeTx.bridgingTimeMs / 1000)
+      : 0;
 
-        // Build XRPL Explorer URL
-        const xrplTxUrl =
+    // Determine if bridging is still in progress
+    const isBridging =
+      !activeTx.destinationTxHash &&
+      activeTx.status !== "Failed" &&
+      activeTx.status !== "Arrived" &&
+      activeTx.status !== "Timeout";
+
+    // Build XRPL Explorer URL
+    const xrplTxUrl =
+      network === "Testnet"
+        ? `https://testnet.xrpl.org/transactions/${activeTx.id}`
+        : `https://devnet.xrpl.org/transactions/${activeTx.id}`;
+
+    // Build EVM Explorer URL
+    let evmTxUrl: string | null = null;
+    if (activeTx.destinationTxHash) {
+      evmTxUrl =
         network === "Testnet"
-          ? `https://testnet.xrpl.org/transactions/${activeTx.id}`
-          : `https://devnet.xrpl.org/transactions/${activeTx.id}`;
-  
-      // Build EVM Explorer URL
-      let evmTxUrl: string | null = null;
-      if (activeTx.destinationTxHash) {
-        evmTxUrl =
-          network === "Testnet"
-            ? `https://explorer.testnet.xrplevm.org/tx/${activeTx.destinationTxHash}`
-            : `https://explorer.xrplevm.org/tx/${activeTx.destinationTxHash}`;
-      }
+          ? `https://explorer.testnet.xrplevm.org/tx/${activeTx.destinationTxHash}`
+          : `https://explorer.xrplevm.org/tx/${activeTx.destinationTxHash}`;
+    }
 
-      return (
-        <div className="fixed inset-0 flex items-center justify-center z-50 bg-black/50">
-          <div className="bg-white rounded-md p-6 w-[859px] text-black">
-            <h2 className="text-xl font-bold mb-4">Transaction Status</h2>
-  
-            {/* XRPL Tx ID Link */}
-            <p className="mb-2">
-              <strong>Transaction ID:</strong>{" "}
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+        {/* Modal Card */}
+        <div className="bg-[#1E1E1E] w-[500px] max-w-[90%] p-6 rounded-xl shadow-xl relative text-white">
+          {/* Title */}
+          <h2 className="text-2xl font-bold mb-6 text-center">
+            Your Transaction has been sent
+          </h2>
+
+          {/* Transaction details */}
+          <div className="space-y-4">
+            {/* XRPL Tx Hash */}
+            <div className="flex flex-col gap-1">
+              <span className="text-sm text-gray-400">Transaction ID (XRPL)</span>
               <a
                 href={xrplTxUrl}
                 target="_blank"
-                rel="noreferrer"
-                className="underline text-blue-600 hover:text-blue-800"
+                rel="noopener noreferrer"
+                className="text-green-400 underline break-all hover:text-green-300"
               >
                 {activeTx.id}
               </a>
-            </p>
-  
-            <p className="mb-2">
-              <strong>Current Status:</strong> {activeTx.status}
-            </p>
-  
+            </div>
+
+            {/* Current Status */}
+            <div className="flex flex-col gap-1">
+              <span className="text-sm text-gray-400">Current Status</span>
+              <span className="font-medium">
+                {activeTx.status === "Arrived" ? "Arrived" : activeTx.status}
+              </span>
+            </div>
+
+            {/* Bridging spinner if bridging */}
             {isBridging && (
-              <div className="flex items-center gap-2 text-blue-600 mb-2">
-                <div className="w-4 h-4 border-2 border-t-transparent border-blue-600 rounded-full animate-spin" />
+              <div className="flex items-center gap-2 text-green-400 mb-2">
+                <div className="w-4 h-4 border-2 border-t-transparent border-green-400 rounded-full animate-spin" />
                 <p>Bridging in progress...</p>
               </div>
             )}
-  
-            {/* Destination Tx Hash Link */}
-            {activeTx.destinationTxHash && evmTxUrl && (
-              <p className="mb-2">
-                <strong>Destination Tx Hash:</strong>{" "}
+
+            {/* Destination Tx Hash (if present) */}
+            {evmTxUrl && (
+              <div className="flex flex-col gap-1">
+                <span className="text-sm text-gray-400">Destination Tx Hash</span>
                 <a
                   href={evmTxUrl}
                   target="_blank"
-                  rel="noreferrer"
-                  className="underline text-blue-600 hover:text-blue-800"
+                  rel="noopener noreferrer"
+                  className="text-green-400 underline break-all hover:text-green-300"
                 >
                   {activeTx.destinationTxHash}
                 </a>
-              </p>
+              </div>
             )}
-  
-            {activeTx.bridgingTimeMs && (
-              <p className="mb-2">
-                <strong>Bridging time:</strong> {activeTx.bridgingTimeMs} s
-              </p>
+
+            {/* Bridging Time (in seconds) */}
+            {bridgingTimeSec > 0 && (
+              <div className="flex flex-col gap-1">
+                <span className="text-sm text-gray-400">Bridging time</span>
+                <span className="font-medium">{bridgingTimeSec} sec</span>
+              </div>
             )}
-  
-            <button
-              className="bg-purple-600 text-white px-4 py-2 rounded-md mt-4"
-              onClick={() => setActiveTx(null)}
-            >
-              Close
-            </button>
           </div>
+
+          {/* Action button */}
+          <button
+            className="mt-8 w-full py-3 rounded-md bg-green-600 hover:bg-green-500 font-semibold text-white"
+            onClick={() => setActiveTx(null)}
+          >
+            Done
+          </button>
         </div>
-      );
-    }
+      </div>
+    );
+  }
 
-
+  // Missing Requirements Modal
   function MissingRequirementsModal() {
     if (!showMissingRequirementsModal) return null;
 
@@ -241,7 +261,6 @@ export function Faucet({
       </div>
     );
   }
-
 
   return (
     <>
@@ -332,6 +351,7 @@ export function Faucet({
       {/* Render the Transaction Status Modal if we have an active transaction */}
       <TransactionStatusModal />
 
+      {/* Missing Requirements Modal */}
       <MissingRequirementsModal />
     </>
   );
