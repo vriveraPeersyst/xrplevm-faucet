@@ -5,6 +5,8 @@ import { io, Socket } from "socket.io-client";
 import { MetamaskButton } from "./metamask-button";
 import { Button } from "./ui/button";
 import { BridgingProgress } from "./bridging-progress";
+import { Logo } from "@/components/logo";
+
 
 export type NetworkType = "Devnet" | "Testnet";
 
@@ -277,10 +279,13 @@ export function Faucet({
 
   return (
     <>
-      <section className="flex flex-col items-center justify-center gap-4 px-4 py-8">
-        <h2 className="text-2xl font-bold text-center">
-          XRPL EVM {network} Faucet
-        </h2>
+      <section className="flex flex-col items-center justify-center gap-5 px-4 py-8">
+      <div
+        className="mb-8"
+        style={{ transform: "scale(3)", transformOrigin: "center" }}
+      >
+        <Logo />
+      </div>
 
         {/* Network Selector */}
         <div className="flex flex-col items-center gap-2">
@@ -300,21 +305,21 @@ export function Faucet({
 
         {/* MetaMask Button (adds the chosen network) */}
         <div>
-          <MetamaskButton className="mt-2" network={network} />
+          <MetamaskButton className="mt-3" network={network} />
         </div>
 
         {/* EVM Address input */}
         <div className="flex flex-col items-start gap-1">
           <label htmlFor="evmAddress" className="font-semibold">
-            Your EVM Account Address
+            Your Address
           </label>
           <input
             id="evmAddress"
             type="text"
             value={evmAddress}
             onChange={(e) => setEvmAddress(e.target.value)}
-            placeholder="0x123..."
-            className="border border-white/20 rounded-md px-3 py-2 w-[459px] bg-background text-foreground"
+            placeholder="0x5l8r9m..."
+            className="border border-white/20 rounded-md px-3 py-2 w-[459px] bg-background text-foreground focus:placeholder-transparent"
             disabled={!!evmAddressFromHeader}
           />
         </div>
@@ -323,7 +328,7 @@ export function Faucet({
         <p className="text-center font-medium mt-4">
           Before requesting, please complete the following:
         </p>
-        <ul className="flex flex-col items-start gap-2">
+        <ul className="flex flex-col items-center gap-2 text-center">
           <li>
             <a
               href="https://x.com/Peersyst"

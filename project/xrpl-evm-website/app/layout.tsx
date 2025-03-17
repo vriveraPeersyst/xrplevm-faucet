@@ -46,10 +46,23 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
           gtag('config', 'G-KJN0XF1YMF');
           `}
       </Script>
-      <body className={`${workSans.className} antialiased`}>
+      <body className={`${workSans.className} antialiased relative`}>
+        {/* Left branding line */}
+        <img
+          src="/left.svg"
+          alt="Branding left"
+          className="absolute left-0 top-0 h-full pointer-events-none"
+        />
+        {/* Right branding line */}
+        <img
+          src="/right.svg"
+          alt="Branding right"
+          className="absolute right-0 top-0 h-full pointer-events-none"
+        />
         {children}
         <TailwindIndicator />
       </body>
+
     </html>
   );
 }

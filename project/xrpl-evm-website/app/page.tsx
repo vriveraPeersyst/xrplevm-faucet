@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Header } from "@/components/header";
-import { Hero } from "@/components/hero";
+// Remove Hero import since we no longer need it
 import { Faucet } from "@/components/faucet";
 import { Footer } from "@/components/footer";
 
@@ -11,25 +11,17 @@ export default function Home() {
   const [evmAddress, setEvmAddress] = useState("");
 
   return (
-    <main className="flex flex-col gap-[72px] w-full">
+    <main className="flex flex-col min-h-screen w-full">
       <Header
         network={network}
-        onAddressConnected={(addr) => {
-          // store the address so we can pass it to the faucet
-          setEvmAddress(addr);
-        }}
+        onAddressConnected={(addr) => setEvmAddress(addr)}
       />
-      <div className="relative -mt-[589px]">
-        <Hero />
-        <div className="absolute top-75 left-0 w-full h-full flex items-center justify-center">
-          <Faucet
-            network={network}
-            setNetwork={setNetwork}
-            // Pass the address we got from the header
-            // so the user doesn't have to type it
-            evmAddressFromHeader={evmAddress}
-          />
-        </div>
+      <div className="flex-grow flex items-center justify-center my-37">
+        <Faucet
+          network={network}
+          setNetwork={setNetwork}
+          evmAddressFromHeader={evmAddress}
+        />
       </div>
       <Footer network={network} />
     </main>

@@ -173,7 +173,7 @@ app.post('/api/faucet', async (req: Request, res: Response): Promise<void> => {
 });
 
 // Start the backend server.
-const PORT = process.env.PORT || 3003;
+const PORT = process.env.PORT || 5005;
 httpServer.listen(PORT, () => {
   console.log(`Faucet backend listening on http://localhost:${PORT}`);
 });
