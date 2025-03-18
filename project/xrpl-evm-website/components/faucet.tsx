@@ -117,7 +117,7 @@ export function Faucet({
    * Connect to Socket.IO on mount, listen for transaction events.
    */
   useEffect(() => {
-    const newSocket: Socket = io("http://localhost:3003");
+    const newSocket: Socket = io("http://localhost:5005");
     setSocket(newSocket);
 
     // Listen for new TX creation
@@ -232,7 +232,7 @@ export function Faucet({
     setWaitTime(10);
 
     try {
-      const resp = await fetch("http://localhost:3003/api/faucet", {
+      const resp = await fetch("http://localhost:5005/api/faucet", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ network, evmAddress }),
@@ -274,21 +274,37 @@ export function Faucet({
    */
   function TransactionStatusModal(): JSX.Element | null {
     if (!activeTx) return null;
-
-    const bridgingTimeSec = activeTx.bridgingTimeMs
-      ? Math.floor(activeTx.bridgingTimeMs / 1000)
-      : 0;
+  
+    // We'll map your existing statuses to the new display statuses.
+    let displayedStatus = "";
+    let extraMessage = "";
+  
+    switch (activeTx.status) {
+      case "Executed":
+        // Show "Pending" + ETA ~2 minutes
+        displayedStatus = "Pending";
+        extraMessage = "Estimated time: ~2 minutes";
+        break;
+      case "Arrived":
+        // Once EVM transaction arrives => "Completed"
+        displayedStatus = "Completed";
+        break;
+      case "Failed":
+      case "Timeout":
+        displayedStatus = "Failed";
+        break;
+      default:
+        // e.g. "Bridging" or any other in-progress statuses
+        displayedStatus = activeTx.status || "Pending";
+        break;
+    }
+  
+    // Show bridging spinner if still "Pending" (or your other in-progress states).
     const isBridging =
-      !activeTx.destinationTxHash &&
-      activeTx.status !== "Failed" &&
-      activeTx.status !== "Arrived" &&
-      activeTx.status !== "Timeout";
-
-    const xrplTxUrl =
-      network === "Testnet"
-        ? `https://testnet.xrpl.org/transactions/${activeTx.id}`
-        : `https://devnet.xrpl.org/transactions/${activeTx.id}`;
-
+      displayedStatus === "Pending" ||
+      displayedStatus === "Bridging";
+  
+    // EVM transaction link, if we have it
     let evmTxUrl: string | null = null;
     if (activeTx.destinationTxHash) {
       evmTxUrl =
@@ -296,39 +312,48 @@ export function Faucet({
           ? `https://explorer.testnet.xrplevm.org/tx/${activeTx.destinationTxHash}`
           : `https://explorer.xrplevm.org/tx/${activeTx.destinationTxHash}`;
     }
-
+  
+    // Bridging time (if your code sets bridgingTimeMs)
+    const bridgingTimeSec = activeTx.bridgingTimeMs
+      ? Math.floor(activeTx.bridgingTimeMs / 1000)
+      : 0;
+  
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
         <div className="bg-[#1E1E1E] w-[500px] max-w-[90%] p-6 rounded-xl shadow-xl relative text-white">
           <h2 className="text-2xl font-bold mb-6 text-center">
-            Your Transaction has been sent
+            Transaction Status
           </h2>
+  
           <div className="space-y-4">
-            {/* XRPL Tx ID */}
-            <div className="flex flex-col gap-1">
-              <span className="text-sm text-gray-400">Transaction ID (XRPL)</span>
-              <a
-                href={xrplTxUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-green-400 underline break-all hover:text-green-300"
-              >
-                {activeTx.id}
-              </a>
-            </div>
-            {/* Current status */}
+            {/* 
+              1) XRPL Tx ID block removed
+              2) Displayed status is "Pending" or "Completed"
+            */}
             <div className="flex flex-col gap-1">
               <span className="text-sm text-gray-400">Current Status</span>
-              <span className="font-medium">
-                {activeTx.status === "Arrived" ? "Arrived" : activeTx.status}
+              <span
+                className={`font-medium ${
+                  displayedStatus === "Pending" ? "animate-pulse" : ""
+                }`}
+              >
+                {displayedStatus}
               </span>
+              {extraMessage && (
+                <span className="text-sm text-gray-400">{extraMessage}</span>
+              )}
             </div>
-            {/* If bridging in progress, show spinner/facts */}
+  
+            {/* If bridging is in progress, show your bridging spinner/facts */}
             {isBridging && <BridgingProgress />}
-            {/* Destination TX */}
-            {evmTxUrl && (
+  
+            {/* 
+              3) Once EVM tx arrives => "Completed" 
+                 We show only the XRPLEVM Tx Hash
+            */}
+            {displayedStatus === "Completed" && evmTxUrl && (
               <div className="flex flex-col gap-1">
-                <span className="text-sm text-gray-400">Destination Tx Hash</span>
+                <span className="text-sm text-gray-400">XRPLEVM Tx Hash</span>
                 <a
                   href={evmTxUrl}
                   target="_blank"
@@ -339,7 +364,8 @@ export function Faucet({
                 </a>
               </div>
             )}
-            {/* bridging time if known */}
+  
+            {/* If bridging time is recorded, still show it */}
             {bridgingTimeSec > 0 && (
               <div className="flex flex-col gap-1">
                 <span className="text-sm text-gray-400">Bridging time</span>
@@ -347,7 +373,7 @@ export function Faucet({
               </div>
             )}
           </div>
-          {/* Close button */}
+  
           <button
             className="mt-8 w-full py-3 rounded-md bg-green-600 hover:bg-green-500 font-semibold text-white"
             onClick={() => setActiveTx(null)}
@@ -358,6 +384,7 @@ export function Faucet({
       </div>
     );
   }
+  
 
   /**
    * Renders the "Missing Requirements" modal for Follow Twitter / Join Discord
