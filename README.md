@@ -1,23 +1,46 @@
-
 # XRPL EVM Faucet Project
 
-This repository implements a faucet for the XRPL EVM sidechain. The project consists of two main components:
+This repository contains two main components:
 
-1. **Faucet Backend:**  
-   A Node.js/TypeScript Express API that:
-   - Funds an ephemeral XRPL wallet.
-   - Submits an XRPL Payment transaction with unique memos for bridging.
-   - Polls both the XRPL (source) and the XRPL-EVM (destination) for transaction status.
-   - Broadcasts real-time transaction updates via Socket.IO.
-   - Records transaction data in a SQLite database.
+1. **Faucet Backend (Express + XRPL + Socket.IO + SQLite)**  
+2. **XRPL EVM Website (Next.js + Tailwind CSS)**
 
-2. **XRPL EVM Website:**  
-   A Next.js application that provides a user interface where users can:
-   - Choose between XRPL EVM Devnet and Testnet.
-   - Connect MetaMask to add/switch to the selected network.
-   - Enter an Ethereum-compatible (0x…) address.
-   - Complete required actions (e.g. follow on X, join Discord).
-   - Request XRP from the faucet and view transaction status updates.
+Below is a high-level overview of each part and how to set it up for **production** usage, with **npm** for the backend and **yarn** for the frontend.
+
+---
+
+## Table of Contents
+
+- [Overview](#overview)
+- [Repository Structure](#repository-structure)
+- [Faucet Backend](#faucet-backend)
+  - [Installation & Setup (npm)](#installation--setup-npm)
+  - [Production Build & Run](#production-build--run)
+  - [Environment Variables](#environment-variables)
+  - [Endpoints](#endpoints)
+- [XRPL EVM Website](#xrpl-evm-website)
+  - [Installation & Setup (yarn)](#installation--setup-yarn)
+  - [Production Build & Run](#production-build--run-1)
+  - [Key Components](#key-components)
+- [Database](#database)
+- [Deployment Tips](#deployment-tips)
+- [License](#license)
+
+---
+
+## Overview
+
+**Goal**: Provide a demo faucet that sends test XRP from the XRPL to a sidechain (XRPL EVM) address. The system:
+
+1. **Backend**  
+   - Creates ephemeral XRPL wallets.
+   - Submits transactions to XRPL.
+   - Polls bridging completion on XRPL EVM.
+   - Uses a local SQLite database to record transactions.
+
+2. **Frontend**  
+   - Provides a React-based UI (Next.js + Tailwind) to connect MetaMask, choose a network, and request test XRP.
+   - Displays bridging progress, bridging facts, and final status.
 
 ---
 
@@ -25,193 +48,226 @@ This repository implements a faucet for the XRPL EVM sidechain. The project cons
 
 ```
 .
-├── generate_report.sh         # Script to generate a repository report (structure and file contents)
-├── package.json               # Root package.json (e.g. ethers dependency)
-└── project
-    ├── faucet-backend       # Faucet backend service
-    │   ├── .env             # Environment configuration
-    │   ├── .env.example     # Example env configuration
-    │   ├── .gitignore       
-    │   ├── package.json     
-    │   ├── src
-    │   │   ├── db.ts            # SQLite DB initialization & connection
-    │   │   ├── index.ts         # Express server & API endpoint (POST /api/faucet)
-    │   │   ├── pollTxStatus.ts  # Polling logic for XRPL and XRPL-EVM transactions
-    │   │   └── transactionTypes.ts  # Functions for submitting XRPL transactions
-    │   └── tsconfig.json
-    └── xrpl-evm-website     # Frontend website (Next.js)
-        ├── .gitignore       
-        ├── .next            # Next.js build output
-        ├── README.md        # Frontend README (optional)
-        ├── app              # Next.js application code
-        │   ├── globals.css
-        │   ├── layout.tsx
-        │   └── page.tsx
-        ├── components       # React UI components (faucet, header, footer, etc.)
-        ├── lib              # Utility functions (e.g. cn for Tailwind merging)
-        ├── public           # Public assets (logos, images)
-        ├── package.json     
-        ├── tsconfig.json    
-        └── ... (other config files)
+├── .gitignore
+├── README.md                <-- This file
+├── faucet.db                <-- SQLite DB (if generated at root)
+├── generate_report.sh
+├── project
+│   ├── faucet-backend
+│   │   ├── .env
+│   │   ├── .env.example
+│   │   ├── .gitignore
+│   │   ├── faucet.db
+│   │   ├── package.json
+│   │   ├── src
+│   │   │   ├── db.ts
+│   │   │   ├── index.ts
+│   │   │   ├── pollTxStatus.ts
+│   │   │   └── transactionTypes.ts
+│   │   └── tsconfig.json
+│   └── xrpl-evm-website
+│       ├── .gitignore
+│       ├── .next
+│       │   └── ... (Next.js build artifacts)
+│       ├── app
+│       │   ├── globals.css
+│       │   ├── layout.tsx
+│       │   └── page.tsx
+│       ├── components
+│       │   ├── bridging-progress.tsx
+│       │   ├── connect-wallet-button.tsx
+│       │   ├── external-link.tsx
+│       │   ├── faucet.tsx
+│       │   ├── footer.tsx
+│       │   ├── header.tsx
+│       │   ├── icons.tsx
+│       │   ├── metamask-button.tsx
+│       │   ├── ui
+│       │   │   ├── button.tsx
+│       │   │   ├── card.tsx
+│       │   │   ├── navigation-menu.tsx
+│       │   │   └── scroll-animation.tsx
+│       ├── lib
+│       │   └── utils.ts
+│       ├── package.json
+│       ├── public
+│       │   ├── left.svg
+│       │   ├── right.svg
+│       │   └── logos
+│       ├── tsconfig.json
+│       └── yarn.lock
+└── repo_report.txt
 ```
 
----
-
-## Prerequisites
-
-- **Node.js** v14 or higher
-- **npm**, **yarn**, or **pnpm**
+- **faucet-backend**: Node/Express server that handles XRPL + bridging logic.
+- **xrpl-evm-website**: Next.js app for the front-end UI.
 
 ---
 
-## Setup Instructions
+## Faucet Backend
 
-### Faucet Backend
+### Installation & Setup (npm)
 
-1. **Navigate to the backend directory:**
-
-   ```bash
-   cd project/faucet-backend
-   ```
-
-2. **Install dependencies:**
-
+1. **Navigate** to `project/faucet-backend`.
+2. **Install dependencies** using **npm**:
    ```bash
    npm install
-   # or
+   ```
+3. **Create a `.env` file** (based on `.env.example`) to specify XRPL URLs, gateway addresses, etc.
+
+### Production Build & Run
+
+While the backend is primarily TypeScript, you can compile and run it with standard Node in production:
+
+```bash
+# Build the project
+npx tsc
+
+# Run the compiled output (in dist/)
+node dist/index.js
+```
+
+Or simply run:
+```bash
+npm run dev
+```
+if you are comfortable with `ts-node-dev` in production. For a more robust production environment, consider using a process manager like `PM2`:
+
+```bash
+npm install pm2 -g
+pm2 start dist/index.js --name faucet-backend
+```
+
+### Environment Variables
+
+Common `.env` keys:
+
+- `XRPL_TESTNET_URL` = `wss://s.altnet.rippletest.net:51233`
+- `TESTNET_GATEWAY_ADDRESS` = `<Your XRPL Testnet gateway address>`
+- `XRPL_DEVNET_URL` = `wss://s.devnet.rippletest.net:51233`
+- `DEVNET_GATEWAY_ADDRESS` = `<Your XRPL Devnet gateway address>`
+- `PORT` = `5005` (or any free port)
+
+### Endpoints
+
+- **`POST /api/faucet`**  
+  Body:  
+  ```json
+  {
+    "evmAddress": "0xYourAddress",
+    "network": "Testnet" | "Devnet"
+  }
+  ```
+  Returns JSON with `{ "success": true, "txHash": "<hash>" }` if successful.  
+  The backend also emits Socket.IO events (`transactionCreated`, `transactionUpdated`) to inform the UI of bridging status.
+
+---
+
+## XRPL EVM Website
+
+### Installation & Setup (yarn)
+
+1. **Navigate** to `project/xrpl-evm-website`.
+2. **Install dependencies** using **yarn**:
+   ```bash
    yarn install
    ```
-
-3. **Configure Environment Variables:**
-
-   - Copy the `.env.example` file to `.env` and update values as needed.
-   - An example `.env` file:
-
-     ```ini
-     XRPL_TESTNET_URL=wss://s.altnet.rippletest.net:51233
-     XRPL_DEVNET_URL=wss://s.devnet.rippletest.net:51233
-     TESTNET_GATEWAY_ADDRESS=rsCPY4vwEiGogSraV9FeRZXca6gUBWZkhg
-     DEVNET_GATEWAY_ADDRESS=rGAbJZEzU6WaYv5y1LfyN7LBBcQJ3TxsKC
-     PORT=3003
-     ```
-
-4. **Initialize the Database:**
-
-   - The backend uses SQLite. The database file (`faucet.db`) will be created automatically upon first run.
-
-5. **Start the Backend Server:**
-
+3. **Development server**:
    ```bash
-   npm run dev
-   # or
    yarn dev
    ```
+   The Next.js app will start on port `5089` by default.
 
-   The server will listen on [http://localhost:3003](http://localhost:3003).  
-   The `/api/faucet` endpoint is used by the website to request XRP.
+### Production Build & Run
 
----
+For a production build:
 
-### XRPL EVM Website
+```bash
+yarn build
+yarn start
+```
 
-1. **Navigate to the website directory:**
+- This compiles the Next.js app and then serves it on port `5089` (by default).
+- For advanced production usage, consider hosting on a dedicated service or container.
 
-   ```bash
-   cd project/xrpl-evm-website
-   ```
+### Key Components
 
-2. **Install dependencies:**
-
-   ```bash
-   npm install
-   # or
-   yarn install
-   ```
-
-3. **Start the Development Server:**
-
-   ```bash
-   npm run dev
-   # or
-   yarn dev
-   ```
-
-   The website will run at [http://localhost:3000](http://localhost:3000).
+- **`faucet.tsx`**  
+  Main faucet UI, includes Connect Wallet, Add Network, input for EVM address, and bridging request logic.
+- **`connect-wallet-button.tsx`**  
+  Detects & connects MetaMask, manages user’s connected account state.
+- **`metamask-button.tsx`**  
+  Button to add XRPL EVM Devnet/Testnet to MetaMask.
+- **`bridging-progress.tsx`**  
+  Shows bridging spinner and rotating facts while waiting for bridging.
+- **`layout.tsx`** / **`page.tsx`**  
+  Next.js App Router layout + main page entry.
 
 ---
 
-## Testing the Faucet
+## Database
 
-1. **Open the Website:**
-
-   - Go to [http://localhost:3000](http://localhost:3000) in your browser.
-
-2. **Select the Network:**
-
-   - Use the network selector in the faucet component to choose between **XRPL EVM Devnet** and **XRPL EVM Testnet**.
-   - This selection is passed to MetaMask to add or switch to the appropriate network.
-
-3. **Enter Your EVM Address:**
-
-   - Provide a valid Ethereum-compatible address (must start with `0x`).
-
-4. **Complete Required Steps:**
-
-   - Follow the provided links to follow on X and join Discord.
-   - These actions must be completed before submitting a faucet request.
-
-5. **Request XRP:**
-
-   - Click the **Request XRP** button.
-   - The backend will:
-     - Fund an ephemeral XRPL wallet.
-     - Submit a Payment transaction with a unique bridging fraction.
-     - Start polling the XRPL and XRPL-EVM networks for transaction status.
-   - Real-time updates (e.g. "Settled", "Failed", or "Timeout") are emitted via Socket.IO and logged in the backend console.
-
-6. **Monitor Updates:**
-
-   - You can observe transaction logs in the backend terminal.
-   - Optionally, you can integrate a Socket.IO client on the frontend to display status updates in real time.
-
----
-
-## Additional Scripts
-
-- **generate_report.sh:**  
-  To generate a full repository report (structure and file contents), run:
-
-  ```bash
-  ./generate_report.sh
+- Uses **SQLite**.  
+- A `faucet.db` file is created in the backend folder.  
+- Table: **`transactions`** to store bridging/faucet data:
+  ```sql
+  CREATE TABLE IF NOT EXISTS transactions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    evmAddress TEXT,
+    fractionId REAL,
+    xrplTxHash TEXT,
+    xrplevmTxHash TEXT,
+    amountId REAL,
+    xrplTxTime INTEGER,
+    xrplevmTxTime INTEGER,
+    status TEXT,
+    bridgingTimeMs INTEGER,
+    destinationTxHash TEXT
+  );
   ```
 
-  The report is saved as `repo_report.txt`.
-
 ---
 
-## Troubleshooting
+## Deployment Tips
 
-- **Environment Variables:**  
-  Double-check the values in your `.env` file under `project/faucet-backend`.
+1. **Security**:  
+   - Store secrets in `.env` or a secure vault.  
+   - Consider using HTTPS for your domain, or a reverse proxy (NGINX) for SSL termination.
 
-- **Port Conflicts:**  
-  If port 3003 (backend) or 3000 (frontend) is in use, update the corresponding configuration.
+2. **Process Management**:  
+   - Use PM2 or systemd for the backend Node process in production.
 
-- **MetaMask Integration:**  
-  Ensure your MetaMask extension is installed and up to date. If the network prompt does not appear, try manually adding the network using the provided configurations in the faucet component.
+3. **Build**:  
+   - For the backend, compile TypeScript to JavaScript.  
+   - For the frontend, run `yarn build` for an optimized production build.
 
----
-
-## Contributing
-
-Contributions are welcome! Please feel free to open issues or submit pull requests with bug fixes or improvements.
+4. **Scaling**:  
+   - The backend is not horizontally scalable out of the box with SQLite. Consider switching to a networked DB for large-scale usage.
 
 ---
 
 ## License
 
-This project is licensed under the [MIT License](LICENSE).
+```
+MIT License
 
----
+Copyright (c) 2023
 
-Happy testing and building on the XRPL EVM sidechain!
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the “Software”), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is furnished
+to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+```
