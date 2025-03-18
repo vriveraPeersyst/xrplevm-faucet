@@ -69,8 +69,16 @@ export function Faucet({
   setNetwork,
   evmAddressFromHeader,
 }: FaucetProps): JSX.Element {
-  // EVM address
+  /**
+   * "evmAddress": the typed address the user can fill in (or overwritten by connected address).
+   */
   const [evmAddress, setEvmAddress] = useState<string>(evmAddressFromHeader || "");
+
+  /**
+   * "connectedAddress": the actual wallet address from ConnectWalletButton
+   * used to show the green circle + short address.
+   */
+  const [connectedAddress, setConnectedAddress] = useState<string>("");
 
   // Tracking the user's progress on required steps
   const [followedTwitter, setFollowedTwitter] = useState<boolean>(false);
@@ -109,7 +117,7 @@ export function Faucet({
    * Connect to Socket.IO on mount, listen for transaction events.
    */
   useEffect(() => {
-    const newSocket: Socket = io("http://localhost:5005");
+    const newSocket: Socket = io("http://localhost:3003");
     setSocket(newSocket);
 
     // Listen for new TX creation
@@ -184,14 +192,16 @@ export function Faucet({
         (window as any).ethereum.removeListener("chainChanged", handleChainChanged);
       };
     }
-  }, [hasMetaMask, evmAddress]);
+  }, [hasMetaMask, connectedAddress]);
 
   /**
    * Disconnect flow
    */
   const handleDisconnect = async (): Promise<void> => {
     setShowDisconnectMenu(false);
-    setEvmAddress("");
+    // Clear the connected address
+    setConnectedAddress("");
+
     if (hasMetaMask) {
       try {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -213,6 +223,7 @@ export function Faucet({
       setShowMissingRequirementsModal(true);
       return;
     }
+    // Use the typed "evmAddress" for the faucet request
     if (!evmAddress.startsWith("0x") || evmAddress.length < 10) {
       alert("Please enter a valid EVM address (starting with 0x).");
       return;
@@ -221,7 +232,7 @@ export function Faucet({
     setWaitTime(10);
 
     try {
-      const resp = await fetch("http://localhost:5005/api/faucet", {
+      const resp = await fetch("http://localhost:3003/api/faucet", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ network, evmAddress }),
@@ -244,16 +255,19 @@ export function Faucet({
     }
   };
 
-  // Check if user is already on the desired chain
+  // Check if user is on the desired chain
   const desiredChainId: string = getDesiredChainId(network);
   const isOnDesiredChain: boolean =
     !!chainId && chainId.toLowerCase() === desiredChainId.toLowerCase();
 
-  // Short address display
-  const shortAddress: string =
-    evmAddress && evmAddress.length > 10
-      ? `${evmAddress.slice(0, 5)}...${evmAddress.slice(-3)}`
-      : evmAddress;
+  // We consider "connected" if connectedAddress is not empty
+  const isConnected = connectedAddress !== "";
+
+  // shortConnected for the green circle display
+  const shortConnected: string =
+    connectedAddress.length > 10
+      ? `${connectedAddress.slice(0, 5)}...${connectedAddress.slice(-3)}`
+      : connectedAddress;
 
   /**
    * Renders bridging/faucet transaction status
@@ -369,6 +383,14 @@ export function Faucet({
     );
   }
 
+  /**
+   * If user is connected => disable the text field
+   * We'll use a "sleek" background color for read-only style
+   */
+  const addressInputClass = isConnected
+    ? "border border-white/30 bg-[#2E2E2E] text-gray-200 cursor-not-allowed"
+    : "border border-white/20 bg-background text-foreground focus:placeholder-transparent";
+
   return (
     <>
       <section className="flex flex-col items-center justify-center gap-5 px-4 py-8">
@@ -383,9 +405,15 @@ export function Faucet({
         {/* Row: left = connect/disconnect square; right = add network */}
         <div className="mb-4 flex items-center gap-3">
           {/* Left: connect or connected address */}
-          {!evmAddress ? (
+          {!isConnected ? (
             // Square connect wallet button
-            <ConnectWalletButton onConnected={(addr) => setEvmAddress(addr)} />
+            <ConnectWalletButton
+              onConnected={(addr) => {
+                // On connect => set both connectedAddress & evmAddress
+                setConnectedAddress(addr);
+                setEvmAddress(addr);
+              }}
+            />
           ) : (
             <div className="relative inline-block">
               <button
@@ -394,8 +422,8 @@ export function Faucet({
               >
                 {/* Green circle */}
                 <div className="w-2 h-2 rounded-full bg-green-500" />
-                {/* Short address */}
-                <span className="text-sm text-white">{shortAddress}</span>
+                {/* shortConnected for display */}
+                <span className="text-sm text-white">{shortConnected}</span>
               </button>
 
               {/* Disconnect dropdown */}
@@ -454,8 +482,8 @@ export function Faucet({
             value={evmAddress}
             onChange={(e) => setEvmAddress(e.target.value)}
             placeholder="0x5l8r9m..."
-            className="border border-white/20 rounded-md px-3 py-2 w-[459px] bg-background text-foreground focus:placeholder-transparent"
-            disabled={!!evmAddressFromHeader}
+            disabled={isConnected}
+            className={`rounded-md px-3 py-2 w-[459px] ${addressInputClass}`}
           />
         </div>
 
