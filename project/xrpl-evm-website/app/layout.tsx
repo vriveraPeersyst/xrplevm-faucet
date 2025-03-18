@@ -56,14 +56,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <img
           src="/left.svg"
           alt="Branding left"
-          className="absolute top-0 bottom-0 left-0 w-30 object-contain pointer-events-none z-[-1]"
+          className="absolute top-0 bottom-0 left-0 w-69 object-contain pointer-events-none z-[-1]"
         />
 
         {/* Right branding line, pinned from top to bottom, narrower width */}
         <img
           src="/right.svg"
           alt="Branding right"
-          className="absolute top-0 bottom-0 right-0 w-30 object-contain pointer-events-none z-[-1]"
+          className="absolute top-0 bottom-0 right-0 w-69 object-contain pointer-events-none z-[-1]"
         />
 
         {children}
