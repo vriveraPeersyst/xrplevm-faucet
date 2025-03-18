@@ -1,31 +1,42 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import React, { useState, useEffect, JSX } from "react";
 import { io, Socket } from "socket.io-client";
-import { MetamaskButton } from "./metamask-button";
+import { MetamaskButton } from "./metamask-button"; // Must use this
+import { ConnectWalletButton } from "./connect-wallet-button";
 import { Button } from "./ui/button";
 import { BridgingProgress } from "./bridging-progress";
 import { Logo } from "@/components/logo";
 
-
+/**
+ * The network type used throughout.
+ */
 export type NetworkType = "Devnet" | "Testnet";
 
-// Optional: define a type for transaction updates
-type TxStatus = {
+/**
+ * Transaction status for bridging/faucet tracking.
+ */
+interface TxStatus {
   id: string;
   status?: string;
   bridgingTimeMs?: number;
   destinationTxHash?: string;
-};
+}
 
+/**
+ * Emitted when a new transaction is created on the backend.
+ */
 interface TransactionCreatedEvent {
   result: {
     id: string;
     status: string;
-    // add other fields if needed
+    // Add other fields if needed
   };
 }
 
+/**
+ * Emitted when a transaction is updated (polled, bridging done, etc.).
+ */
 interface TransactionUpdatedEvent {
   id: string;
   status?: string;
@@ -33,48 +44,75 @@ interface TransactionUpdatedEvent {
   destinationTxHash?: string;
 }
 
+/**
+ * Props for our main Faucet component.
+ */
 interface FaucetProps {
   network: NetworkType;
   setNetwork: React.Dispatch<React.SetStateAction<NetworkType>>;
-  evmAddressFromHeader?: string; // <--- NEW optional prop
+  evmAddressFromHeader?: string;
+}
+
+/**
+ * Hardcode chain IDs that your metamask-button uses.
+ */
+const XRPL_DEVNET_CHAINID = "0x" + Number(1440002).toString(16);
+const XRPL_TESTNET_CHAINID = "0x" + Number(1449000).toString(16);
+
+/** Return chainId string for the chosen network. */
+function getDesiredChainId(network: NetworkType): string {
+  return network === "Devnet" ? XRPL_DEVNET_CHAINID : XRPL_TESTNET_CHAINID;
 }
 
 export function Faucet({
   network,
   setNetwork,
   evmAddressFromHeader,
-}: FaucetProps) {
-  // Local states for user actions
-  const [evmAddress, setEvmAddress] = useState(evmAddressFromHeader || "");
-  const [followedTwitter, setFollowedTwitter] = useState(false);
-  const [joinedDiscord, setJoinedDiscord] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [waitTime, setWaitTime] = useState(0);
+}: FaucetProps): JSX.Element {
+  // EVM address
+  const [evmAddress, setEvmAddress] = useState<string>(evmAddressFromHeader || "");
 
-  // Socket.io states for tracking transaction
+  // Tracking the user's progress on required steps
+  const [followedTwitter, setFollowedTwitter] = useState<boolean>(false);
+  const [joinedDiscord, setJoinedDiscord] = useState<boolean>(false);
+
+  // Faucet request state
+  const [loading, setLoading] = useState<boolean>(false);
+  const [waitTime, setWaitTime] = useState<number>(0);
+
+  // Connect/Disconnect dropdown
+  const [showDisconnectMenu, setShowDisconnectMenu] = useState<boolean>(false);
+
+  // The chain ID from the wallet (if any)
+  const [chainId, setChainId] = useState<string | null>(null);
+
+  // Socket.io for transaction updates
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [socket, setSocket] = useState<Socket | null>(null);
   const [activeTx, setActiveTx] = useState<TxStatus | null>(null);
 
-  const [showMissingRequirementsModal, setShowMissingRequirementsModal] = useState(false);
+  // Missing Requirements modal
+  const [showMissingRequirementsModal, setShowMissingRequirementsModal] = useState<boolean>(false);
 
-    // Whenever evmAddressFromHeader changes, update our local evmAddress
-    useEffect(() => {
-      if (evmAddressFromHeader) {
-        setEvmAddress(evmAddressFromHeader);
-      } else {
-        // If disconnected or no address from the header, let them type
-        setEvmAddress("");
-      }
-    }, [evmAddressFromHeader]);
-  
-
-  // Connect to Socket.IO once on mount
+  /**
+   * Sync evmAddressFromHeader to local state if changed.
+   */
   useEffect(() => {
-    const newSocket = io("http://localhost:3003"); // or your server's URL
+    if (evmAddressFromHeader) {
+      setEvmAddress(evmAddressFromHeader);
+    } else {
+      setEvmAddress("");
+    }
+  }, [evmAddressFromHeader]);
+
+  /**
+   * Connect to Socket.IO on mount, listen for transaction events.
+   */
+  useEffect(() => {
+    const newSocket: Socket = io("http://localhost:5005");
     setSocket(newSocket);
 
-    // Listen for transactionCreated
+    // Listen for new TX creation
     newSocket.on("transactionCreated", (data: TransactionCreatedEvent) => {
       setActiveTx({
         id: data.result.id,
@@ -82,18 +120,16 @@ export function Faucet({
       });
     });
 
-    // Listen for transactionUpdated
+    // Listen for TX updates
     newSocket.on("transactionUpdated", (data: TransactionUpdatedEvent) => {
       if (data.id === activeTx?.id) {
         setActiveTx((prev) => {
           if (!prev) return null;
-
           let newStatus = prev.status;
-          // If we see a destinationTxHash + bridgingTime, mark it as "Arrived"
+          // If bridging is completed
           if (data.destinationTxHash && data.bridgingTimeMs) {
             newStatus = "Arrived";
           }
-
           return {
             ...prev,
             status: newStatus,
@@ -104,38 +140,96 @@ export function Faucet({
       }
     });
 
+    // Cleanup on unmount
     return () => {
       newSocket.disconnect();
     };
   }, [activeTx?.id]);
 
-  // Handle faucet request
-  const handleRequestXRP = async () => {
+  /**
+   * Safely check for MetaMask to avoid SSR errors
+   */
+  const hasMetaMask: boolean =
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    typeof window !== "undefined" && !!(window as any).ethereum;
+
+  /**
+   * On mount / chain changes, read chainId if possible.
+   */
+  useEffect(() => {
+    async function fetchChainId() {
+      if (hasMetaMask) {
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const cid = await (window as any).ethereum.request({
+            method: "eth_chainId",
+          });
+          setChainId(cid as string);
+        } catch (err) {
+          console.error("Failed to get chainId:", err);
+        }
+      }
+    }
+    fetchChainId();
+
+    if (hasMetaMask) {
+      const handleChainChanged = (chain: string) => {
+        setChainId(chain);
+      };
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (window as any).ethereum.on("chainChanged", handleChainChanged);
+
+      return () => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (window as any).ethereum.removeListener("chainChanged", handleChainChanged);
+      };
+    }
+  }, [hasMetaMask, evmAddress]);
+
+  /**
+   * Disconnect flow
+   */
+  const handleDisconnect = async (): Promise<void> => {
+    setShowDisconnectMenu(false);
+    setEvmAddress("");
+    if (hasMetaMask) {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await (window as any).ethereum.request({
+          method: "wallet_revokePermissions",
+          params: [{ eth_accounts: {} }],
+        });
+      } catch (error) {
+        console.error("Error disconnecting wallet:", error);
+      }
+    }
+  };
+
+  /**
+   * The main faucet request
+   */
+  const handleRequestXRP = async (): Promise<void> => {
     if (!followedTwitter || !joinedDiscord) {
       setShowMissingRequirementsModal(true);
       return;
     }
-
     if (!evmAddress.startsWith("0x") || evmAddress.length < 10) {
       alert("Please enter a valid EVM address (starting with 0x).");
       return;
     }
-
     setLoading(true);
-    setWaitTime(10); // e.g., 10 seconds
+    setWaitTime(10);
 
     try {
-      const resp = await fetch("http://localhost:3003/api/faucet", {
+      const resp = await fetch("http://localhost:5005/api/faucet", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ network, evmAddress }),
       });
       const data = await resp.json();
-
       if (!data.success) {
         throw new Error(data.error || "Faucet failed");
       }
-
       console.log("Faucet TX started. XRPL Hash:", data.txHash);
     } catch (error: unknown) {
       console.error(error);
@@ -150,29 +244,37 @@ export function Faucet({
     }
   };
 
-  // Enhanced Transaction Status Modal
-  function TransactionStatusModal() {
+  // Check if user is already on the desired chain
+  const desiredChainId: string = getDesiredChainId(network);
+  const isOnDesiredChain: boolean =
+    !!chainId && chainId.toLowerCase() === desiredChainId.toLowerCase();
+
+  // Short address display
+  const shortAddress: string =
+    evmAddress && evmAddress.length > 10
+      ? `${evmAddress.slice(0, 5)}...${evmAddress.slice(-3)}`
+      : evmAddress;
+
+  /**
+   * Renders bridging/faucet transaction status
+   */
+  function TransactionStatusModal(): JSX.Element | null {
     if (!activeTx) return null;
 
-    // Convert bridgingTime from ms to seconds
     const bridgingTimeSec = activeTx.bridgingTimeMs
       ? Math.floor(activeTx.bridgingTimeMs / 1000)
       : 0;
-
-    // Determine if bridging is still in progress
     const isBridging =
       !activeTx.destinationTxHash &&
       activeTx.status !== "Failed" &&
       activeTx.status !== "Arrived" &&
       activeTx.status !== "Timeout";
 
-    // Build XRPL Explorer URL
     const xrplTxUrl =
       network === "Testnet"
         ? `https://testnet.xrpl.org/transactions/${activeTx.id}`
         : `https://devnet.xrpl.org/transactions/${activeTx.id}`;
 
-    // Build EVM Explorer URL
     let evmTxUrl: string | null = null;
     if (activeTx.destinationTxHash) {
       evmTxUrl =
@@ -183,16 +285,12 @@ export function Faucet({
 
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-        {/* Modal Card */}
         <div className="bg-[#1E1E1E] w-[500px] max-w-[90%] p-6 rounded-xl shadow-xl relative text-white">
-          {/* Title */}
           <h2 className="text-2xl font-bold mb-6 text-center">
             Your Transaction has been sent
           </h2>
-
-          {/* Transaction details */}
           <div className="space-y-4">
-            {/* XRPL Tx Hash */}
+            {/* XRPL Tx ID */}
             <div className="flex flex-col gap-1">
               <span className="text-sm text-gray-400">Transaction ID (XRPL)</span>
               <a
@@ -204,21 +302,16 @@ export function Faucet({
                 {activeTx.id}
               </a>
             </div>
-
-            {/* Current Status */}
+            {/* Current status */}
             <div className="flex flex-col gap-1">
               <span className="text-sm text-gray-400">Current Status</span>
               <span className="font-medium">
                 {activeTx.status === "Arrived" ? "Arrived" : activeTx.status}
               </span>
             </div>
-
-            {/* Bridging spinner if bridging */}
-            {isBridging && (
-              <BridgingProgress />
-            )}
-
-            {/* Destination Tx Hash (if present) */}
+            {/* If bridging in progress, show spinner/facts */}
+            {isBridging && <BridgingProgress />}
+            {/* Destination TX */}
             {evmTxUrl && (
               <div className="flex flex-col gap-1">
                 <span className="text-sm text-gray-400">Destination Tx Hash</span>
@@ -232,8 +325,7 @@ export function Faucet({
                 </a>
               </div>
             )}
-
-            {/* Bridging Time (in seconds) */}
+            {/* bridging time if known */}
             {bridgingTimeSec > 0 && (
               <div className="flex flex-col gap-1">
                 <span className="text-sm text-gray-400">Bridging time</span>
@@ -241,8 +333,7 @@ export function Faucet({
               </div>
             )}
           </div>
-
-          {/* Action button */}
+          {/* Close button */}
           <button
             className="mt-8 w-full py-3 rounded-md bg-green-600 hover:bg-green-500 font-semibold text-white"
             onClick={() => setActiveTx(null)}
@@ -254,8 +345,10 @@ export function Faucet({
     );
   }
 
-  // Missing Requirements Modal
-  function MissingRequirementsModal() {
+  /**
+   * Renders the "Missing Requirements" modal for Follow Twitter / Join Discord
+   */
+  function MissingRequirementsModal(): JSX.Element | null {
     if (!showMissingRequirementsModal) return null;
 
     return (
@@ -263,8 +356,7 @@ export function Faucet({
         <div className="bg-white rounded-md p-6 w-[500px] text-black">
           <h2 className="text-xl font-bold mb-4">Almost there!</h2>
           <p className="mb-4">
-            Please make sure you follow us on 𝕏 and join our Discord 👾 before
-            requesting test XRP.
+            Please make sure you follow us on 𝕏 and join our Discord 👾 before requesting test XRP.
           </p>
           <button
             className="bg-purple-600 text-white px-4 py-2 rounded-md"
@@ -280,12 +372,60 @@ export function Faucet({
   return (
     <>
       <section className="flex flex-col items-center justify-center gap-5 px-4 py-8">
-      <div
-        className="mb-8"
-        style={{ transform: "scale(3)", transformOrigin: "center" }}
-      >
-        <Logo />
-      </div>
+        {/* Logo (scaled 3x) */}
+        <div
+          className="mb-8"
+          style={{ transform: "scale(3)", transformOrigin: "center" }}
+        >
+          <Logo />
+        </div>
+
+        {/* Row: left = connect/disconnect square; right = add network */}
+        <div className="mb-4 flex items-center gap-3">
+          {/* Left: connect or connected address */}
+          {!evmAddress ? (
+            // Square connect wallet button
+            <ConnectWalletButton onConnected={(addr) => setEvmAddress(addr)} />
+          ) : (
+            <div className="relative inline-block">
+              <button
+                onClick={() => setShowDisconnectMenu(!showDisconnectMenu)}
+                className="h-10 px-4 flex items-center gap-2 border border-white/10 bg-white/5 rounded-md hover:bg-white/10"
+              >
+                {/* Green circle */}
+                <div className="w-2 h-2 rounded-full bg-green-500" />
+                {/* Short address */}
+                <span className="text-sm text-white">{shortAddress}</span>
+              </button>
+
+              {/* Disconnect dropdown */}
+              {showDisconnectMenu && (
+                <div className="absolute top-full left-0 mt-2 w-[140px] bg-[#1E1E1E] border border-white/10 rounded-md shadow-lg p-2 z-50">
+                  <button
+                    className="w-full text-left px-2 py-1 hover:bg-white/10 rounded-md text-white"
+                    onClick={handleDisconnect}
+                  >
+                    Disconnect
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Right: MetamaskButton or "No Wallet" or "Network Added" */}
+          {!hasMetaMask ? (
+            <Button variant="outline" className="h-10" disabled>
+              No Wallet
+            </Button>
+          ) : isOnDesiredChain ? (
+            <Button variant="outline" className="h-10" disabled>
+              Network Added
+            </Button>
+          ) : (
+            // If not on chain => normal metamask button
+            <MetamaskButton className="h-10" network={network} />
+          )}
+        </div>
 
         {/* Network Selector */}
         <div className="flex flex-col items-center gap-2">
@@ -303,13 +443,8 @@ export function Faucet({
           </select>
         </div>
 
-        {/* MetaMask Button (adds the chosen network) */}
-        <div>
-          <MetamaskButton className="mt-3" network={network} />
-        </div>
-
         {/* EVM Address input */}
-        <div className="flex flex-col items-start gap-1">
+        <div className="flex flex-col items-center gap-1">
           <label htmlFor="evmAddress" className="font-semibold">
             Your Address
           </label>
@@ -367,10 +502,8 @@ export function Faucet({
         </Button>
       </section>
 
-      {/* Render the Transaction Status Modal if we have an active transaction */}
+      {/* Transaction modals */}
       <TransactionStatusModal />
-
-      {/* Missing Requirements Modal */}
       <MissingRequirementsModal />
     </>
   );

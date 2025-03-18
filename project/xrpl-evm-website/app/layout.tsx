@@ -34,7 +34,7 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
       <Script src="https://www.googletagmanager.com/gtag/js?id=G-KJN0XF1YMF" strategy="afterInteractive" />
@@ -44,25 +44,32 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
           function gtag(){dataLayer.push(arguments);}
           gtag('js', new Date());
           gtag('config', 'G-KJN0XF1YMF');
-          `}
+        `}
       </Script>
+
+      {/* 
+        Make sure the <body> is "relative" so our absolutely positioned
+        images can be placed behind other content via z-[-1].
+      */}
       <body className={`${workSans.className} antialiased relative`}>
-        {/* Left branding line */}
+        {/* Left branding line, pinned from top to bottom, narrower width */}
         <img
           src="/left.svg"
           alt="Branding left"
-          className="absolute left-0 top-0 h-full pointer-events-none"
+          className="absolute top-0 bottom-0 left-0 w-30 object-contain pointer-events-none z-[-1]"
         />
-        {/* Right branding line */}
+
+        {/* Right branding line, pinned from top to bottom, narrower width */}
         <img
           src="/right.svg"
           alt="Branding right"
-          className="absolute right-0 top-0 h-full pointer-events-none"
+          className="absolute top-0 bottom-0 right-0 w-30 object-contain pointer-events-none z-[-1]"
         />
+
         {children}
+
         <TailwindIndicator />
       </body>
-
     </html>
   );
 }
