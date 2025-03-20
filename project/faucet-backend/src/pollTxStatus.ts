@@ -1,122 +1,122 @@
+// pollTxStatus.ts
+
 import { Client } from "xrpl";
 import { Server as SocketServer } from "socket.io";
-import axios from "axios";
-import { getDb } from "./db";
+import axios, { AxiosError } from "axios";
 
 const SOURCE_POLL_INTERVAL = 5000; // 5 seconds
 const DEST_POLL_INTERVAL = 5000;   // 5 seconds
 const MAX_POLL_ATTEMPTS = 300;
 
 /**
- * Safely accesses TransactionResult property
+ * pollSourceTxStatus
+ * 
+ * - Returns a Promise that resolves with the XRPL close_time_iso 
+ *   once the transaction is "tesSUCCESS".
+ * - If it fails or times out, the promise rejects.
  */
+
 function getTransactionResult(meta: any): string | null {
   return meta && typeof meta === "object" && "TransactionResult" in meta
     ? meta.TransactionResult
     : null;
 }
 
-/**
- * Poll the source chain (XRPL) for transaction status.
- * - On success, store sourceTxTime in DB using close_time_iso.
- */
-export async function pollSourceTxStatus(
+
+export function pollSourceTxStatus(
   xrplUrl: string,
   txHash: string,
   io: SocketServer
-): Promise<void> {
-  const xrplClient = new Client(xrplUrl);
-  await xrplClient.connect();
+): Promise<string> {
+  return new Promise(async (resolve, reject) => {
+    const xrplClient = new Client(xrplUrl);
+    await xrplClient.connect();
 
-  let attempts = 0;
-  const intervalId = setInterval(async () => {
-    attempts++;
-    try {
-      const response = await xrplClient.request({
-        command: "tx",
-        transaction: txHash,
-        binary: false,
-      });
+    let attempts = 0;
 
-      const transactionResult = getTransactionResult(response.result.meta);
+    const intervalId = setInterval(async () => {
+      attempts++;
 
-      if (transactionResult === "tesSUCCESS") {
-        // Extract the official XRPL close time (ISO string)
-        const closeTimeIso = response.result.close_time_iso as string;
-        const sourceTxMs = new Date(closeTimeIso).getTime();
-
-        // Broadcast that the source TX is settled
-        io.emit("transactionUpdated", {
-          id: txHash,
-          sourceStatus: "Settled",
-          // You could also pass the ISO string if the UI wants to show it
-          sourceTxTime: closeTimeIso,
+      try {
+        const response = await xrplClient.request({
+          command: "tx",
+          transaction: txHash,
+          binary: false,
         });
 
-        // Update DB with new status + store the sourceTxTime in ms
-        const db = getDb();
-        await db.run(
-          `UPDATE transactions 
-             SET status = ?, 
-                 xrplTxTime = ?
-           WHERE xrplTxHash = ?`,
-          "XRPL Settled",
-          sourceTxMs,   // store as a number
-          txHash
-        );
+        const transactionResult = getTransactionResult(response.result.meta);
 
-        clearInterval(intervalId);
-        await xrplClient.disconnect();
-      } else if (transactionResult !== null) {
-        // Means it was some other status (tec, tef, etc.)
-        io.emit("transactionUpdated", {
-          id: txHash,
-          sourceStatus: "Failed",
-        });
-        clearInterval(intervalId);
-        await xrplClient.disconnect();
+        if (transactionResult === "tesSUCCESS") {
+          const closeTimeIso = response.result.close_time_iso as string;
+          
+          // Let the front-end know the XRPL side is settled
+          io.emit("transactionUpdated", {
+            id: txHash,
+            sourceStatus: "Settled",
+            sourceTxTime: closeTimeIso,
+          });
+
+          clearInterval(intervalId);
+          await xrplClient.disconnect();
+
+          // *** We RESOLVE with the actual close_time_iso ***
+          return resolve(closeTimeIso);
+        }
+        else if (transactionResult !== null) {
+          // Some other code: tec, tef, etc. => mark as fail
+          io.emit("transactionUpdated", { id: txHash, sourceStatus: "Failed" });
+
+          clearInterval(intervalId);
+          await xrplClient.disconnect();
+          return reject(new Error(`XRPL tx failed with code: ${transactionResult}`));
+        }
+      } catch (err) {
+        console.error("Error polling source tx status:", err);
+        // We can keep retrying unless attempts is max
       }
-    } catch (err) {
-      console.error("Error polling source tx status:", err);
-    }
 
-    if (attempts >= MAX_POLL_ATTEMPTS) {
-      clearInterval(intervalId);
-      io.emit("transactionUpdated", {
-        id: txHash,
-        sourceStatus: "Timeout",
-      });
-      await xrplClient.disconnect();
-    }
-  }, SOURCE_POLL_INTERVAL);
+      if (attempts >= MAX_POLL_ATTEMPTS) {
+        clearInterval(intervalId);
+        await xrplClient.disconnect();
+
+        io.emit("transactionUpdated", {
+          id: txHash,
+          sourceStatus: "Timeout",
+        });
+        return reject(new Error("XRPL tx polling timed out"));
+      }
+    }, SOURCE_POLL_INTERVAL);
+  });
 }
 
 /**
- * Poll the destination chain (EVM sidechain) for transaction status.
- * - On success, extract `timestamp` from the inbound transaction item.
- * - Then fetch `xrplTxTime` from DB, compute bridgingTime = EVMtime - XRPLtime in **seconds**.
+ * pollDestinationTxStatus
+ * 
+ * - Once we have the XRPL close_time_iso, we pass it to this function.
+ * - We filter for token transfers >= that time + matching amount = 90.00589, etc.
  */
-export async function pollDestinationTxStatus(
+export function pollDestinationTxStatus(
   destinationAddress: string,
-  expectedTotal: number,
-  sourceTxHash: string,
-  startedAt: number,
+  sourceCloseTimeIso: string,
+  txHash: string,
   io: SocketServer,
-  network: "Devnet" | "Testnet" // <-- Add this
-): Promise<void> {
+  network: "Devnet" | "Testnet"
+): void {
   let attempts = 0;
 
+  // Our known faucet amount
+  const faucetAmount = 90.00589; // e.g. 90.00589
   const intervalId = setInterval(async () => {
     attempts++;
+
     try {
-      // Construct the explorer API URL.
+      // 1) Construct the explorer API URL
       let explorerBaseUrl: string;
       let xrperc20address: string;
 
       if (network === "Devnet") {
         explorerBaseUrl = "https://explorer.xrplevm.org/api/v2/addresses";
         xrperc20address = "0xD4949664cD82660AaE99bEdc034a0deA8A0bd517";
-
       } else {
         explorerBaseUrl = "https://explorer.testnet.xrplevm.org/api/v2/addresses";
         xrperc20address = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE";
@@ -128,85 +128,89 @@ export async function pollDestinationTxStatus(
         `&filter=${destinationAddress}%20|%200x0000000000000000000000000000000000000000` +
         `&token=${xrperc20address}`;
 
-      const resp = await axios.get(url);
-      const items = resp.data.items as any[];
-
-      // We need the sourceTxTime from DB to compute bridging time
-      const db = getDb();
-      // Retrieve the row from DB to get the XRPL settle time
-      const row = await db.get<{
-        xrplTxTime: number | null;
-      }>(
-        `SELECT xrplTxTime 
-           FROM transactions
-          WHERE xrplTxHash = ?`,
-        sourceTxHash
-      );
-      const sourceTxMs = row?.xrplTxTime || 0;
-
-      for (const item of items) {
-        // Ensure the inbound transfer's "to" address matches (case-insensitive)
-        if (item.to?.hash?.toLowerCase() !== destinationAddress.toLowerCase()) {
-          continue;
+      // 2) Fetch transfers
+      // 2) Fetch transfers
+      let items: any[] = [];
+      try {
+        const resp = await axios.get(url);
+        items = resp.data.items as any[];
+      } catch (error) {
+        // If the explorer returns 404, treat it as "no items found" => continue polling
+        if (axios.isAxiosError(error)) {
+          const axErr = error as AxiosError;
+          if (axErr.response?.status === 404) {
+            console.log("[pollDestinationTxStatus] Explorer returned 404, no items found yet.");
+            // We do NOT throw; just keep polling
+            items = [];
+          } else {
+            // Some other error code => log and keep polling
+            console.error("Error polling destination tx status:", error);
+          }
+        } else {
+          // Non-Axios error, log it
+          console.error("Error polling destination tx status:", error);
         }
-        const rawValueStr = item.total.value;
-        const decimals = parseInt(item.total.decimals, 10);
+      }
+
+      // 3) We parse each item, looking for:
+      //    - "to" address = destinationAddress
+      //    - amount = 90.00589
+      //    - item.timestamp > sourceCloseTimeIso
+      for (const item of items) {
+        if (!item?.to?.hash) continue;
+
+        const toAddr = item.to.hash.toLowerCase();
+        if (toAddr !== destinationAddress.toLowerCase()) continue;
+
+        // Compare amounts
+        const rawValueStr = item?.total?.value ?? "0";
+        const decimals = parseInt(item?.total?.decimals ?? "18", 10);
         const floatVal = parseFloat(rawValueStr) / 10 ** decimals;
 
-        // If you are bridging e.g. 0.0002, make sure expectedTotal is also 0.0002, not 90.0002
-        if (Math.abs(floatVal - expectedTotal) < 1e-9) {
-          // We found the inbound deposit.
-          // Now parse the item.timestamp (like "2025-03-14T15:19:36.000000Z")
-          const evmTimeMs = new Date(item.timestamp).getTime();
-
-          // bridgingTime in ms
-          let bridgingTimeMs = 0;
-          if (sourceTxMs > 0) {
-            bridgingTimeMs = evmTimeMs - sourceTxMs;
-          }
-          // Convert to seconds
-          const bridgingTimeSec = Math.floor(bridgingTimeMs / 1000);
-
-          console.log(
-            `[pollDestinationTxStatus] Found inbound deposit for XRPL tx=${sourceTxHash}, EVM tx=${item.transaction_hash}`
-          );
-
-          // Emit an event so the frontend sees "Arrived"
-          // and bridging time in seconds
-          io.emit("transactionUpdated", {
-            id: sourceTxHash,
-            destinationTxStatus: "Arrived",
-            bridgingTimeMs: bridgingTimeSec,  // <--- now in seconds
-            destinationTxHash: item.transaction_hash,
-          });
-
-          // Update DB with final status + store the EVM timestamp + bridgingTime
-          await db.run(
-            `UPDATE transactions
-               SET status = ?, 
-                   bridgingTimeMs = ?, 
-                   destinationTxHash = ?, 
-                   xrplevmTxTime = ?
-             WHERE xrplTxHash = ?`,
-            "Arrived",
-            bridgingTimeSec,   // store bridging time in seconds
-            item.transaction_hash,
-            evmTimeMs,
-            sourceTxHash
-          );
-
-          clearInterval(intervalId);
-          return;
+        // Compare to 90.00589
+        if (Math.abs(floatVal - faucetAmount) > 1e-9) {
+          continue; // not the faucet deposit
         }
+
+        // Compare timestamps
+        const evmTimestampIso = item.timestamp; // e.g. "2023-07-03T20:09:59.000000Z"
+        const evmTimeMs = new Date(evmTimestampIso).getTime();
+        const sourceTxMs = new Date(sourceCloseTimeIso).getTime();
+
+        // We only consider items that happened after the XRPL close_time_iso
+        if (evmTimeMs <= sourceTxMs) {
+          continue;
+        }
+
+        // => We found a match!
+        const bridgingTimeMs = evmTimeMs - sourceTxMs;
+        const bridgingTimeSec = Math.floor(bridgingTimeMs / 1000);
+
+        console.log(
+          `[pollDestinationTxStatus] Found inbound deposit for XRPL tx=${txHash}, EVM tx=${item.transaction_hash}`
+        );
+
+        // Let the UI know bridging is done
+        io.emit("transactionUpdated", {
+          id: txHash,
+          destinationTxStatus: "Arrived",
+          bridgingTimeMs: bridgingTimeSec,
+          destinationTxHash: item.transaction_hash,
+        });
+
+        // Cleanup
+        clearInterval(intervalId);
+        return;
       }
     } catch (err) {
       console.error("Error polling destination tx status:", err);
+      // We'll keep trying unless attempts is max
     }
 
     if (attempts >= MAX_POLL_ATTEMPTS) {
       clearInterval(intervalId);
       io.emit("transactionUpdated", {
-        id: sourceTxHash,
+        id: txHash,
         destinationTxStatus: "Timeout",
       });
     }
