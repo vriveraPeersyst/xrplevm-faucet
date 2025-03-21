@@ -1,0 +1,50 @@
+name: build-api
+
+on:
+  workflow_call:
+    inputs:
+      push:
+        required: true
+        type: boolean
+      target:
+        required: true
+        type: string
+
+jobs:
+  build:
+    name: Build faucet-backend
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PUSH_TOKEN }}
+
+      - name: Set env vars for docker image
+        run: |
+          echo "DOCKER_IMAGE_NAME=${{ secrets.DOCKER_USERNAME }}/faucet-backend:${{ github.sha:0:8 }}" >> $GITHUB_ENV
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v4
+        with:
+          file: ./project/faucet-backend/Dockerfile
+          target: ${{ inputs.target }}
+          push: ${{ inputs.push }}
+          tags: ${{ env.DOCKER_IMAGE_NAME }}
+          build-args: |
+            XRPL_DEVNET_URL=${{ secrets.XRPL_DEVNET_URL }}
+            XRPL_TESTNET_URL=${{ secrets.XRPL_TESTNET_URL }}
+            TESTNET_GATEWAY_ADDRESS=${{ secrets.TESTNET_GATEWAY_ADDRESS }}
+            DEVNET_GATEWAY_ADDRESS=${{ secrets.DEVNET_GATEWAY_ADDRESS }}
+            PORT=${{ secrets.PORT }}

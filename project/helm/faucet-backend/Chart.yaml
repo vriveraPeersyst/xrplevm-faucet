@@ -1,0 +1,5 @@
+apiVersion: v2
+name: faucet-backend
+description: Faucet Backend API for XRPL Faucet
+version: 0.1.0+${TAG}
+appVersion: "1.0.0"

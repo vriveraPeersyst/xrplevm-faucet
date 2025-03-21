@@ -1,0 +1,66 @@
+name: deploy
+
+on:
+  workflow_call:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  initial:
+    name: 🎬 Initial
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    outputs:
+      NOW: ${{ steps.env-vars.outputs.NOW }}
+      TAG: ${{ steps.env-vars.outputs.TAG }}
+    steps:
+      - name: Define global vars
+        id: env-vars
+        run: |
+          echo "NOW=$(TZ=':Europe/Madrid' date +'%Y-%m-%dT%H:%M:%S')" >> $GITHUB_OUTPUT
+          echo "TAG=${GITHUB_SHA:0:8}" >> $GITHUB_OUTPUT
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+  deploy:
+    name: Deploy services
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        environment: ['staging']
+    timeout-minutes: 10
+    needs: [initial]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::<YOUR_ACCOUNT_ID>:role/gitHubDeploymentsRole
+          role-session-name: deploymentsRole
+          role-duration-seconds: 900
+          aws-region: us-east-1
+      - name: Install kubectl and Helm
+        run: |
+          curl -Ls https://storage.googleapis.com/kubernetes-release/release/v1.27.4/bin/linux/amd64/kubectl -o kubectl && chmod +x kubectl && sudo mv kubectl /usr/local/bin/
+          curl -Ls https://get.helm.sh/helm-v3.12.2-linux-amd64.tar.gz -o helm.tar.gz && tar -xzf helm.tar.gz && sudo mv linux-amd64/helm /usr/local/bin/helm
+      - name: Set up kubeconfig
+        run: |
+          echo "${{ secrets.KUBECONFIG }}" | base64 --decode > kubeconfig.yaml
+          chmod 600 kubeconfig.yaml
+          echo "KUBECONFIG=$(pwd)/kubeconfig.yaml" >> $GITHUB_ENV
+      - name: Helm deployment for faucet-backend
+        working-directory: ./helm/faucet-backend
+        run: |
+          envsubst < Chart.yaml > Chart-0.yaml
+          mv Chart-0.yaml Chart.yaml
+          kubectl config use-context your-cluster-context
+          helm -n default upgrade faucet-backend ./ --install --atomic --wait --timeout 301s --values values/${{ matrix.environment }}.yaml --set-string timestamp=${{ needs.initial.outputs.NOW }} --set-string tagApi=${{ needs.initial.outputs.TAG }} --debug
+      - name: Helm deployment for xrpl-evm-website
+        working-directory: ./helm/xrpl-evm-website
+        run: |
+          envsubst < Chart.yaml > Chart-0.yaml
+          mv Chart-0.yaml Chart.yaml
+          helm -n default upgrade xrpl-evm-website ./ --install --atomic --wait --timeout 301s --values values/${{ matrix.environment }}.yaml --set-string timestamp=${{ needs.initial.outputs.NOW }} --set-string tagWeb=${{ matrix.environment }}-${{ needs.initial.outputs.TAG }} --debug

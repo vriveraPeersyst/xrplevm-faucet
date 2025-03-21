@@ -1,0 +1,5 @@
+apiVersion: v2
+name: xrpl-evm-website
+description: Helm chart for XRPL EVM Website (Next.js static site served by nginx)
+version: 0.1.0+${TAG}
+appVersion: "1.0.0"

@@ -1,0 +1,36 @@
+replicaCount: 2
+
+image:
+  repository: peersyst/faucet-backend
+  tag: "latest"
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 5005
+  targetPort: 5005
+  namespace: default
+
+deployment:
+  namespace: default
+  replicas: 2
+  memoryRequest: "256Mi"
+  cpuRequest: "250m"
+  memoryLimit: "512Mi"
+  cpuLimit: "500m"
+  port: 5005
+
+# Sensitive environment values will be injected via an override file.
+env:
+  - name: XRPL_DEVNET_URL
+    value: "{{ .Values.env.XRPL_DEVNET_URL }}"
+  - name: XRPL_TESTNET_URL
+    value: "{{ .Values.env.XRPL_TESTNET_URL }}"
+  - name: TESTNET_GATEWAY_ADDRESS
+    value: "{{ .Values.env.TESTNET_GATEWAY_ADDRESS }}"
+  - name: DEVNET_GATEWAY_ADDRESS
+    value: "{{ .Values.env.DEVNET_GATEWAY_ADDRESS }}"
+  - name: PORT
+    value: "{{ .Values.env.PORT }}"
+
+timestamp: "2023-01-01T00:00:00"
