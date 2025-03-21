@@ -1,0 +1,36 @@
+name: Build and deploy
+
+on:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-base:
+    uses: ./.github/workflows/build-base.yaml
+    secrets: inherit
+
+  build-api:
+    needs: [build-base]
+    uses: ./.github/workflows/build-api.yaml
+    secrets: inherit
+    with:
+      push: true
+      target: release
+
+  build-web:
+    needs: [build-base]
+    uses: ./.github/workflows/build-web.yaml
+    secrets: inherit
+    with:
+      push: true
+      target: release
+
+  deploy:
+    needs: [build-api, build-web]
+    uses: ./.github/workflows/deploy.yaml
+    secrets: inherit

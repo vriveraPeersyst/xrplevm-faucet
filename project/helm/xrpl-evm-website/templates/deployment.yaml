@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: xrpl-evm-website-{{ .Values.timestamp | replace ":" "-" | lower }}
+  namespace: {{ .Values.deployment.namespace }}
+  labels:
+    app: xrpl-evm-website
+spec:
+  replicas: {{ .Values.deployment.replicas }}
+  selector:
+    matchLabels:
+      app: xrpl-evm-website
+  template:
+    metadata:
+      labels:
+        app: xrpl-evm-website
+      annotations:
+        timestamp: "{{ .Values.timestamp }}"
+    spec:
+      containers:
+      - name: xrpl-evm-website
+        image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        ports:
+        - containerPort: {{ .Values.deployment.port }}
+        resources:
+          requests:
+            memory: {{ .Values.deployment.memoryRequest }}
+            cpu: {{ .Values.deployment.cpuRequest }}
+          limits:
+            memory: {{ .Values.deployment.memoryLimit }}
+            cpu: {{ .Values.deployment.cpuLimit }}

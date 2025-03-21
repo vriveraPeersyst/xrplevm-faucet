@@ -1,0 +1,23 @@
+replicaCount: 1
+
+image:
+  repository: peersyst/xrpl-evm-website
+  tag: "latest"
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 80
+  namespace: default
+
+deployment:
+  namespace: default
+  replicas: 1
+  memoryRequest: "128Mi"
+  cpuRequest: "100m"
+  memoryLimit: "256Mi"
+  cpuLimit: "200m"
+  port: 80
+
+timestamp: "2023-01-01T00:00:00"
